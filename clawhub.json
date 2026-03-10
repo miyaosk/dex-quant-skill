@@ -1,0 +1,22 @@
+{
+  "name": "dex-quant-skill",
+  "version": "1.0.0",
+  "tagline": "Crypto perpetual futures backtesting with real Binance data",
+  "description": "End-to-end quantitative backtesting skill for crypto perpetual futures, spot, US stocks (RWA), precious metals, and commodities. Fetches real data from Binance/CoinGecko/Yahoo Finance, runs local backtest engine with margin, leverage, funding rate settlement, and liquidation simulation.",
+  "category": "finance",
+  "tags": [
+    "crypto",
+    "backtesting",
+    "perpetual-futures",
+    "quantitative-trading",
+    "binance",
+    "defi"
+  ],
+  "license": "MIT",
+  "author": "HashKey AI",
+  "repository": "https://github.com/your-org/dex-quant-skill",
+  "requires": {
+    "bins": ["python3"],
+    "packages": ["httpx", "loguru", "numpy", "pandas", "yfinance"]
+  }
+}
