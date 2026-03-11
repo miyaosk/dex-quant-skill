@@ -1,64 +1,74 @@
 # DEX Quant Skill
 
-**加密货币永续合约量化回测 Skill** — 让 AI Agent 用自然语言完成端到端的策略研究、回测与分析。
+**加密货币永续合约量化交易 Skill** — 用户用自然语言定制信号，AI Agent 自动完成从信号到回测的全链路。
 
-> "帮我回测一个 BTC 永续合约均线策略，5 倍杠杆，过去一年"
+> "当 RSI 低于 30 且资金费率为负时做多 BTC，5 倍杠杆，止损 3%"
 >
-> → Agent 自动拉数据 → 编写策略 → 执行回测 → 输出分析报告
+> → Agent 定制信号 → 生成策略 → 执行交易 → 回测验证 → 输出分析报告
 
 ## 为什么做这个
 
-加密货币永续合约占市场总交易量的 60%-70%，是量化交易者的主战场。但现有的回测工具要么不支持永续合约特有机制（资金费率、保证金、强平），要么需要复杂的配置和编码。
+加密货币永续合约占市场总交易量的 60%-70%，是量化交易者的主战场。但现有的回测工具要么不支持永续合约特有机制（资金费率、保证金、强平），要么需要复杂的编码。
 
-我们的设计理念：**用户说一句话，AI 替你完成整个回测流程。**
+我们的设计理念：**用户从定制信号开始，全程用自然语言，AI 完成四阶段闭环。**
 
-这个 Skill 让 AI Agent（Claude / Codex / Cursor / Copilot 等）具备专业的加密货币量化研究能力，包括：拉取真实行情数据、生成交易信号、构建策略代码、执行回测、分析结果。
+这个 Skill 让 AI Agent（Claude / Codex / Cursor / Copilot 等）具备专业的加密货币量化研究能力，包括：定制交易信号、生成策略代码、拉取真实行情数据、执行回测、分析结果、迭代优化。
 
 ---
 
-## 设计架构
+## 设计架构 — 四阶段工作流
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    用户（自然语言）                         │
-│         "BTC 永续 5 倍杠杆 资金费率套利 回溯半年"           │
+│      "RSI 低于 30 且放量时做多 BTC，5 倍杠杆，止损 3%"      │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
-┌──────────────────────────────────────────────────────────┐
-│                    AI Agent                               │
-│                                                          │
-│   1. 读 SKILL.md     → 知道自己有什么能力                  │
-│   2. 读 references/  → 学会怎么调 API、怎么写策略           │
-│   3. 用 templates/   → 有现成的策略模板可以改               │
+┌─ Stage 1: 信号定制 ──────────────────────────────────────┐
+│  signal_builder.py                                       │
+│  ├── 指标计算 → SMA / EMA / RSI / MACD / Bollinger / ATR │
+│  ├── 条件组合 → above / below / cross / AND / OR / NOT   │
+│  └── 信号输出 → 做多 / 做空 / 平多 / 平空                  │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
-┌──────────────────────────────────────────────────────────┐
-│                   两层核心引擎                             │
-│                                                          │
-│   📊 数据层 (data_client.py)                              │
-│   ├── Binance Futures API  → 永续合约 K线/资金费率/持仓量   │
-│   ├── Binance Spot API     → 现货 K线                     │
-│   ├── CoinGecko API        → PAXG/XAUT 等代币价格         │
-│   ├── Yahoo Finance        → 美股/大宗商品/贵金属           │
-│   └── DeFi Llama API       → 协议 TVL/手续费               │
-│                                                          │
-│   ⚙️ 回测层 (backtest_engine.py)                          │
-│   ├── 保证金计算（逐仓 + 全仓）                             │
-│   ├── 杠杆支持（1x - 125x）                                │
-│   ├── 资金费率结算（每 8h，使用真实历史数据）                 │
-│   ├── 强制平仓模拟                                         │
-│   ├── 止损 / 止盈                                          │
-│   └── 手续费 + 滑点模型                                    │
+┌─ Stage 2: 策略生成 ──────────────────────────────────────┐
+│  SignalStrategy 组装                                     │
+│  ├── 配置杠杆 / 保证金模式 / 仓位大小                     │
+│  ├── 配置止损 / 止盈 / 滑点                               │
+│  └── strategy.describe() → 展示给用户确认                  │
+└────────────────────────┬─────────────────────────────────┘
+                         ▼
+┌─ Stage 3: 交易执行 ──────────────────────────────────────┐
+│  📊 data_client.py ← 实时/历史数据                        │
+│  ├── Binance Futures API  → K线/资金费率/持仓量            │
+│  ├── Binance Spot API     → 现货 K线                      │
+│  ├── CoinGecko API        → 代币价格                      │
+│  ├── Yahoo Finance        → 美股/大宗商品/贵金属            │
+│  └── DeFi Llama API       → 协议 TVL/手续费                │
+│                                                           │
+│  ⚙️ backtest_engine.py ← 逐 bar 模拟交易                  │
+│  ├── 保证金计算（逐仓 + 全仓）                              │
+│  ├── 杠杆支持（1x - 125x）                                 │
+│  ├── 资金费率结算（每 8h，真实历史数据）                     │
+│  ├── 强制平仓模拟                                          │
+│  └── 止损 / 止盈 / 手续费 / 滑点                           │
+└────────────────────────┬─────────────────────────────────┘
+                         ▼
+┌─ Stage 4: 回测验证 ──────────────────────────────────────┐
+│  📈 绩效报告                                              │
+│  ├── 收益率 / 夏普 / 最大回撤 / 胜率 / 盈亏比              │
+│  ├── 资金费率损益 / 强平次数 / 手续费                       │
+│  └── Agent 解读 → 优化建议 → 回到 Stage 1 迭代             │
 └──────────────────────────────────────────────────────────┘
-                         ▼
-              📈 回测报告 → 返回用户
 ```
 
 **核心设计决策：**
 
+- **信号优先** — 用户从定制信号开始，不需要直接写代码，全程用自然语言
+- **可组合条件** — `Condition.below("rsi", 30) & Condition.above("volume_ratio", 1.5)` 像搭积木一样组合信号
 - **全部使用公开 API，无需任何 API Key** — 零配置即可使用
 - **本地回测引擎** — 不依赖第三方回测服务，数据安全，可离线运行
-- **三层渐进式加载** — Agent 只在需要时读取对应的参考文档，节省上下文窗口
+- **闭环迭代** — 回测结果不好？调整信号参数，重新跑，Agent 辅助优化
 
 ---
 
@@ -89,10 +99,28 @@
 | **滑点模型** | 固定 bps（BTC/ETH 默认 2bps，其他主流 5bps） |
 | **手续费** | Maker 0.02% / Taker 0.05%，可自定义 |
 
+### 信号定制引擎（核心新特性）
+
+| 组件 | 说明 |
+|------|------|
+| **指标库** | SMA / EMA / RSI / MACD / Bollinger Bands / ATR / 成交量均线 |
+| **条件系统** | `above()` / `below()` / `cross_above()` / `cross_below()` / `between()` + AND/OR/NOT 组合 |
+| **预设信号组** | 均线交叉 / RSI 超买超卖 / 资金费率套利 / 布林带突破 / 多因子组合 |
+
+**自然语言示例：**
+
+| 用户说 | Agent 生成 |
+|--------|-----------|
+| "RSI 低于 30 做多" | `Condition.below("rsi", 30)` → `Signal(ENTRY_LONG)` |
+| "快速均线上穿慢速均线" | `Condition.cross_above("fast_ma", "slow_ma")` |
+| "资金费率 > 0.05% 且 RSI > 70" | `Condition.above("funding_rate", 0.0005) & Condition.above("rsi", 70)` |
+| "价格跌破布林带下轨时抄底" | `Condition("close < bb_lower", ...)` → `Signal(ENTRY_LONG)` |
+
 ### 策略模板（开箱即用）
 
 | 模板 | 策略类型 | 说明 |
 |------|---------|------|
+| `custom_signal_strategy.py` | **信号驱动** | 用户自然语言定义信号（推荐入口） |
 | `perpetual_ma_cross.py` | 趋势跟踪 | 双均线交叉，自动开多/开空，含止损止盈 |
 | `funding_rate_arb.py` | 套利 | 资金费率高于阈值时做空永续收取费率，低于阈值平仓 |
 | `cross_asset_portfolio.py` | 组合配置 | BTC + ETH + 黄金（PAXG）按权重分配，定期再平衡 |
@@ -118,31 +146,47 @@ cd dex-quant-skill
 pip install -r requirements.txt
 ```
 
-### 方式一：直接运行策略模板
+### 方式一：信号驱动策略（推荐）
 
-```bash
-# BTC 均线策略回测
-python assets/templates/perpetual_ma_cross.py
+```python
+from scripts.signal_builder import (
+    SignalStrategy, Signal, SignalType, Condition,
+    build_rsi_signals,
+)
 
-# 资金费率套利回测
-python assets/templates/funding_rate_arb.py
+# 用自然语言思维定义信号
+strategy = SignalStrategy(name="BTC RSI策略", symbol="BTC-USDT-PERP")
+config, signals = build_rsi_signals(period=14, overbought=70, oversold=30, leverage=5)
+strategy.indicators_config = config
+for sig in signals:
+    strategy.add_signal(sig)
 
-# 跨资产组合回测
-python assets/templates/cross_asset_portfolio.py
+print(strategy.describe())  # 查看信号逻辑
 ```
 
-### 方式二：Python 代码调用
+```bash
+# 或直接运行模板
+python assets/templates/custom_signal_strategy.py
+```
+
+### 方式二：直接运行其他策略模板
+
+```bash
+python assets/templates/perpetual_ma_cross.py      # 均线交叉
+python assets/templates/funding_rate_arb.py         # 资金费率套利
+python assets/templates/cross_asset_portfolio.py    # 跨资产组合
+```
+
+### 方式三：Python 代码调用
 
 ```python
 from scripts.data_client import DataClient
 from scripts.backtest_engine import BacktestEngine, BacktestConfig
 
-# 拉数据
 client = DataClient()
 klines = client.get_perp_klines("BTC-USDT-PERP", "1d", "2024-01-01", "2025-12-31")
 funding = client.get_funding_rate("BTC-USDT-PERP", "2024-01-01", "2025-12-31")
 
-# 跑回测
 engine = BacktestEngine(BacktestConfig(
     initial_capital=100_000,
     default_leverage=5,
@@ -208,15 +252,18 @@ dex-quant-skill/
 ├── requirements.txt                 # Python 依赖
 │
 ├── scripts/
+│   ├── signal_builder.py            # 信号定制引擎（指标 + 条件 + 信号 + 策略组装）
 │   ├── data_client.py               # 多源数据客户端（5 个 API，20 个方法）
 │   └── backtest_engine.py           # 本地回测引擎（保证金/强平/资金费率）
 │
 ├── assets/templates/
+│   ├── custom_signal_strategy.py    # 策略模板：自定义信号驱动（推荐入口）
 │   ├── perpetual_ma_cross.py        # 策略模板：均线交叉
 │   ├── funding_rate_arb.py          # 策略模板：资金费率套利
 │   └── cross_asset_portfolio.py     # 策略模板：跨资产组合
 │
 └── references/
+    ├── signal-guide.md              # 信号定制指南（自然语言→信号映射）
     ├── data-sources.md              # 各 API 端点详细文档 + 限流说明
     ├── backtest-engine.md           # 保证金/强平/资金费率计算公式
     ├── data-models.md               # Symbol 命名规范 + 合约列表
