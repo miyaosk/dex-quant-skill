@@ -1,28 +1,30 @@
 ---
 name: dex-quant-skill
 description: >
-  加密货币量化回测 Skill：直接调用 Binance/CoinGecko 公开 API 获取数据，本地回测引擎执行永续合约策略回测。
-  使用场景：(1) 用户用自然语言描述交易意图（如"帮我回测 BTC 永续均线策略 5 倍杠杆"），Agent 自动完成端到端回测；
-  (2) 构建量化策略代码（含保证金/杠杆/资金费率/止损止盈）；(3) 获取加密货币行情、资金费率、持仓量等实时数据；
-  (4) 跨资产信号分析（永续+现货+贵金属代币）；(5) 资金费率套利、多空对冲等加密货币特有策略；
-  (6) 任何涉及加密货币永续合约数据查询与量化研究的任务。
+  Crypto perpetual futures quantitative backtesting skill. Fetches real market data from Binance/CoinGecko/Yahoo Finance APIs (no API key needed),
+  runs local backtest engine with margin, leverage, funding rate settlement, and liquidation simulation.
+  Use when user asks to: (1) backtest crypto trading strategies (e.g. "backtest BTC perpetual MA crossover with 5x leverage");
+  (2) fetch crypto market data, funding rates, open interest; (3) build quantitative strategies with margin/leverage/stop-loss;
+  (4) run funding rate arbitrage or long-short hedging strategies; (5) cross-asset portfolio backtesting (crypto + stocks + gold);
+  (6) analyze DeFi protocol TVL or fees; (7) any crypto perpetual futures research or quantitative analysis task.
+  加密货币永续合约量化回测，支持信号生成、策略构建、回测执行与分析。
 ---
 
-# DEX Quant Skill — 信号 · 策略 · 回测
+# DEX Quant Skill — Signals · Strategy · Backtest
 
-## 架构
+## Architecture
 
 ```
-用户 (自然语言)
+User (natural language / 自然语言)
      ↓
-OpenClaw Agent (加载本 Skill)
+AI Agent (loads this Skill)
      ↓
 ┌─────────────────────────────────┐
-│  scripts/data_client.py        │ ← 数据层: Binance / CoinGecko 公开 API
-│  scripts/backtest_engine.py    │ ← 回测层: 本地引擎 (保证金/强平/资金费率)
+│  scripts/data_client.py        │ ← Data: Binance / CoinGecko / yfinance / DeFi Llama
+│  scripts/backtest_engine.py    │ ← Engine: margin / leverage / funding rate / liquidation
 └─────────────────────────────────┘
      ↓
-分析报告 → 返回用户
+Analysis report → User
 ```
 
 **无需 API Key**（全部使用交易所公开端点），国内访问可配置 `PROXY_URL` 环境变量。
