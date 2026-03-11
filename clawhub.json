@@ -14,7 +14,7 @@
   ],
   "license": "MIT",
   "author": "HashKey AI",
-  "repository": "https://github.com/your-org/dex-quant-skill",
+  "repository": "https://github.com/miyaosk/dex-quant-skill",
   "requires": {
     "bins": ["python3"],
     "packages": ["httpx", "loguru", "numpy", "pandas", "yfinance"]
