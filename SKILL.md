@@ -1,48 +1,53 @@
 ---
 name: dex-quant-skill
 description: >
-  Crypto perpetual futures quantitative skill with 4-stage workflow: Signal Design → Strategy Building → Trade Execution → Backtesting.
-  Users can describe trading signals in natural language (e.g. "when RSI drops below 30 and funding rate is negative, go long BTC with 5x leverage"),
-  and the Agent will automatically: (1) parse the signal intent; (2) assemble composable signal conditions using Indicators + Conditions;
-  (3) build a complete strategy with leverage, margin, stop-loss/take-profit; (4) run local backtest with real Binance data.
-  Fetches market data from Binance/CoinGecko/Yahoo Finance/DeFi Llama (no API key needed).
-  Use when user asks to: create/customize trading signals, backtest crypto strategies, analyze funding rates,
-  build quantitative strategies, run cross-asset portfolio backtesting (crypto + stocks + gold + DeFi).
-  加密货币永续合约量化交易技能，四阶段工作流：信号定制→策略构建→交易执行→回测验证。用户用自然语言描述信号即可。
+  Crypto perpetual futures quantitative trading skill. Users describe strategy intent in natural language
+  (e.g. "build me a MACD strategy for BTC with 5x leverage"), Agent asks for entry/exit conditions and risk params,
+  writes the strategy, runs it on historical data to produce trade signals (symbol + time + price + direction + SL/TP),
+  feeds signals to backtest engine, outputs performance report. Includes genetic optimizer for auto parameter search.
+  Use when user asks to: create/build trading strategies, backtest crypto strategies, optimize strategy parameters,
+  analyze trade signals, run funding rate arbitrage, cross-asset portfolio backtesting (crypto + stocks + gold + DeFi).
+  信号是策略产生的。策略跑数据产出信号，信号驱动回测。支持遗传寻优自动找最优参数。
 ---
 
-# DEX Quant Skill — Signal · Strategy · Trade · Backtest
+# DEX Quant Skill — Strategy · Signal · Backtest · Optimize
 
-## Architecture — 四阶段工作流
+## 核心理念
+
+**信号是策略产生的。** 策略定义交易规则，在历史数据上运行产出具体信号（币种 + 时间 + 价格 + 方向 + 止盈止损），信号驱动回测引擎执行交易。
+
+## Architecture
 
 ```
-用户自然语言 (e.g. "RSI 低于 30 且放量时做多 BTC")
-     ↓
-┌─ Stage 1: 信号定制 ──────────────────────────┐
-│  scripts/signal_builder.py                    │
-│  · 指标计算 (MA/EMA/RSI/MACD/Bollinger/ATR)  │
-│  · 条件组合 (above/below/cross/AND/OR/NOT)   │
-│  · 信号输出 (entry_long/short, exit_long/short) │
+用户自然语言 (e.g. "帮我做一个 MACD 策略做 BTC")
+     │
+     ▼
+┌─ Stage 1: Agent 写策略 ──────────────────────┐
+│  · Agent 追问: 入场条件？盈亏比？杠杆？        │
+│  · 用 Strategy + StrategyRule + Condition 组装 │
+│  · strategy.describe() → 用户确认              │
 └──────────────────────────────────────────────┘
-     ↓
-┌─ Stage 2: 策略生成 ──────────────────────────┐
-│  SignalStrategy 组装                          │
-│  · 配置杠杆 / 保证金模式 / 仓位大小         │
-│  · 配置止损 / 止盈 / 滑点                    │
-│  · 策略描述 → 用户确认                       │
+     │
+     ▼
+┌─ Stage 2: 策略产出信号 ──────────────────────┐
+│  · 策略在历史数据上逐 bar 运行                │
+│  · 规则满足 → 产出 TradeSignal                │
+│  · 信号 = 币种 + 时间 + 价格 + 方向 + SL/TP   │
+│  · SignalLog 存储所有信号，可导出 JSON/CSV     │
 └──────────────────────────────────────────────┘
-     ↓
-┌─ Stage 3: 交易执行 ──────────────────────────┐
-│  scripts/data_client.py ← 实时/历史数据      │
-│  scripts/backtest_engine.py ← 逐 bar 模拟    │
-│  · 保证金 / 强制平仓 / 资金费率结算          │
+     │
+     ▼
+┌─ Stage 3: 信号驱动回测 ──────────────────────┐
+│  · data_client.py ← 拉取 Binance/yfinance 数据│
+│  · backtest_engine.py ← 保证金/强平/资金费率   │
+│  · 信号 → engine.open_long() / close_short()  │
 └──────────────────────────────────────────────┘
-     ↓
-┌─ Stage 4: 回测验证 ──────────────────────────┐
-│  绩效报告                                     │
-│  · 收益率 / 夏普 / 最大回撤 / 胜率           │
-│  · 资金费率损益 / 强平次数 / 手续费          │
-│  · Agent 解读 → 优化建议 → 迭代信号          │
+     │
+     ▼
+┌─ Stage 4: 结果 + 优化 ──────────────────────┐
+│  · 绩效报告 + 信号列表 → 返回用户             │
+│  · 效果不好？→ 调参数重跑                     │
+│  · 用 GeneticOptimizer 自动搜索最优参数        │
 └──────────────────────────────────────────────┘
 ```
 
@@ -50,37 +55,74 @@ description: >
 
 ---
 
-## 四阶段流程详解
+## 流程详解
 
-以用户说 **"当 RSI 低于 30 且资金费率为负时做多 BTC，5 倍杠杆，止损 3%，回测最近一年"** 为例：
+以用户说 **"帮我做一个 MACD 策略做 BTC，5 倍杠杆"** 为例：
 
-### Stage 1 — 信号定制
+### Stage 1 — Agent 写策略
 
-1. Agent 解析自然语言，提取要素：指标(RSI)、阈值(30)、条件(资金费率<0)、方向(做多)
-2. 选择指标：`indicators_config = {"rsi_period": 14}`
-3. 组合条件：`Condition.below("rsi", 30) & Condition.below("funding_rate", 0)`
-4. 生成信号：`Signal("RSI超卖+负费率→做多", SignalType.ENTRY_LONG, ...)`
+1. Agent 追问：入场条件？→ "MACD 金叉做多，死叉做空"。盈亏比？→ "1:3"。止损？→ "5%"
+2. Agent 组装策略：`build_macd_strategy(symbol="BTC-USDT-PERP", leverage=5, stop_loss_pct=0.05, take_profit_pct=0.15)`
+3. 调 `strategy.describe()` 展示规则，用户确认
 
-信号定制指南见 [references/signal-guide.md](references/signal-guide.md)
+### Stage 2 — 策略产出信号
 
-### Stage 2 — 策略生成
+4. 拉数据：`data_client.get_perp_klines("BTCUSDT", "1d", limit=365)`
+5. 逐 bar 运行策略 → 规则满足时产出 TradeSignal
+6. 每个信号包含：币种、时间、价格、方向、止损价、止盈价、触发原因
 
-5. 构建 `SignalStrategy`，配置杠杆=5、逐仓、仓位=20%、止损=3%
-6. 调用 `strategy.describe()` 展示完整信号逻辑，让用户确认
+### Stage 3 — 信号驱动回测
 
-### Stage 3 — 交易执行
+7. 信号 → `engine.open_long()` / `close_long()` / `open_short()` / `close_short()`
+8. 引擎处理：保证金、杠杆、资金费率结算、强平检查
 
-7. `data_client.get_perp_klines("BTCUSDT", "1d", limit=365)` — 拉一年日线
-8. `data_client.get_funding_rate("BTCUSDT", ...)` — 拉资金费率
-9. 逐 bar 计算指标 → 评估信号 → 触发时调用 `engine.open_long()` / `close_long()`
+### Stage 4 — 结果 + 优化
 
-### Stage 4 — 回测验证
+9. 输出绩效报告 + 信号列表表格
+10. 效果不好 → 建议调参数，或用 `GeneticOptimizer` 自动找最优
+11. 最优参数 → 重新跑完整回测 → 策略稳定跑起来
 
-10. `engine.get_metrics()` — 获取绩效指标
-11. Agent 解读：收益率、夏普、最大回撤、资金费率损益、强平次数
-12. 如果效果不好，建议用户调整信号参数 → 回到 Stage 1 迭代
+策略与信号详细指南见 [references/signal-guide.md](references/signal-guide.md)
 
-更多场景见 [references/interaction-flows.md](references/interaction-flows.md)
+---
+
+## 策略层 — signal_builder.py
+
+Agent 写策略的核心模块：
+
+| 组件 | 说明 |
+|------|------|
+| `Indicators` | 技术指标 — SMA / EMA / RSI / MACD / Bollinger / ATR / KDJ / 成交量均线 |
+| `Condition` | 条件组合 — `above()` / `below()` / `cross_above()` / `cross_below()` / `&` / `\|` / `~` |
+| `StrategyRule` | 策略规则 — 当条件满足执行动作（开多/开空/平多/平空）+ 杠杆/仓位/止损止盈 |
+| `Strategy` | 策略组装 — 多规则 + 指标配置 + 逐 bar 评估 → 产出 TradeSignal |
+| `TradeSignal` | 策略产出的信号 — 币种 + 时间 + 价格 + 方向 + 止盈止损 |
+| `SignalLog` | 信号存储 — 查询/导出 JSON/CSV/DataFrame + 统计 |
+
+**预设策略（一行调用）：**
+
+| 函数 | 适用场景 | 用户说 |
+|------|----------|--------|
+| `build_macd_strategy()` | MACD 交叉 | "做一个 MACD 策略" |
+| `build_ma_cross_strategy()` | 均线交叉 | "双均线金叉做多" |
+| `build_rsi_strategy()` | RSI 反转 | "RSI 低于 30 做多" |
+| `build_funding_rate_strategy()` | 费率套利 | "费率高做空收费率" |
+| `build_bollinger_strategy()` | 布林带突破 | "跌破下轨做多" |
+
+---
+
+## 寻优层 — optimizer.py
+
+用户不确定最优参数？遗传算法自动搜索。
+
+| 组件 | 说明 |
+|------|------|
+| `ParameterSpace` | 定义参数搜索范围（int/float/choice） |
+| `GeneticOptimizer` | 遗传算法 — 50 个体 × 30 代，锦标赛选择 + 均匀交叉 + 变异，支持提前终止 |
+| `GridSearch` | 网格搜索 — 适合参数空间小的场景 |
+| `OptimizationResult` | 结果 — 最优参数 + Top N + 收敛历史 |
+
+**适应度函数 = 跑回测取夏普比率**（或用户指定的其他指标）。
 
 ---
 
@@ -124,31 +166,6 @@ description: >
 
 ---
 
-## 信号层 — signal_builder.py
-
-信号定制引擎，将自然语言转化为可组合的交易信号：
-
-| 组件 | 说明 |
-|------|------|
-| `Indicators` | 技术指标库 — SMA / EMA / RSI / MACD / Bollinger / ATR / 成交量均线 |
-| `Condition` | 条件组合 — `above()` / `below()` / `cross_above()` / `cross_below()` / `between()` / `&` / `\|` / `~` |
-| `Signal` | 信号定义 — 类型(做多/做空/平多/平空) + 条件 + 杠杆 + 仓位 + 止损止盈 |
-| `SignalStrategy` | 策略组装 — 指标配置 + 多个信号 + 上下文计算 + 信号评估 |
-
-**预设信号组（快捷构建）:**
-
-| 函数 | 适用场景 | 自然语言触发示例 |
-|------|----------|----------------|
-| `build_ma_cross_signals()` | 均线交叉趋势跟踪 | "双均线金叉做多死叉做空" |
-| `build_rsi_signals()` | RSI 超买超卖反转 | "RSI 低于 30 做多" |
-| `build_funding_rate_signals()` | 资金费率套利 | "费率高的时候做空" |
-| `build_bollinger_signals()` | 布林带突破 | "跌破布林带下轨抄底" |
-| `build_multi_factor_signals()` | 多因子组合 | "金叉 + RSI 没超买 + 费率不高" |
-
-信号定制详细指南见 [references/signal-guide.md](references/signal-guide.md)
-
----
-
 ## 回测层 — backtest_engine.py
 
 本地 Python 回测引擎，支持永续合约全部特性：
@@ -172,22 +189,15 @@ description: >
 
 ### Agent 如何处理用户请求
 
-**核心原则：从信号开始，用户全程用自然语言。**
+**核心原则：策略是 Agent 写的。信号是策略产出的。用户全程用自然语言。**
 
-1. **理解意图** — 用户说一句话，Agent 提取：指标 + 条件 + 方向 + 风控参数
-2. **生成信号** — 读取 [references/signal-guide.md](references/signal-guide.md)，用 `signal_builder.py` 组装信号
-3. **展示确认** — 调 `strategy.describe()` 让用户看到完整信号逻辑，确认后继续
-4. **执行回测** — 用 `data_client` 拉取数据 → `BacktestEngine` 逐 bar 执行
-5. **解读报告** — 调 `engine.get_metrics()` 获取结果
-6. **迭代优化** — 如果效果不理想，建议调整信号参数或组合更多条件
-
-### Agent 如何编写策略代码
-
-1. 读取 [references/signal-guide.md](references/signal-guide.md) + [references/strategy-sdk.md](references/strategy-sdk.md)
-2. 判断用户是否描述了明确信号 → 用 `signal_builder.py` 快速构建
-3. 如果是复杂自定义逻辑 → 用 `Condition(name, lambda)` 编写自定义条件
-4. 选择模板（见下方），填充信号和参数
-5. 用 `data_client` 拉取数据 → 喂入 `BacktestEngine` 逐 bar 执行
+1. **理解意图** — 用户说 "帮我做一个 MACD 策略"
+2. **追问细节** — 入场条件？出场条件？盈亏比？杠杆？止损？标的？
+3. **写策略** — 读 [references/signal-guide.md](references/signal-guide.md)，用 `Strategy` + `StrategyRule` 组装
+4. **展示确认** — `strategy.describe()` 展示规则，用户确认
+5. **跑回测** — 策略产出信号 → 信号驱动 BacktestEngine → 输出绩效 + 信号列表
+6. **解读结果** — 夏普、回撤、胜率、信号表格
+7. **迭代优化** — 效果不好？调参数重跑，或用遗传寻优
 
 ### Agent 如何解读回测报告
 
@@ -204,7 +214,8 @@ description: >
 
 | 模板 | 适用场景 |
 |------|----------|
-| `assets/templates/custom_signal_strategy.py` | **推荐** — 信号驱动策略（用户自然语言定义信号） |
+| `assets/templates/custom_signal_strategy.py` | **推荐** — 策略产出信号 + 回测（用户自然语言定义） |
+| `assets/templates/optimize_strategy.py` | 遗传寻优 — 自动搜索最优参数 |
 | `assets/templates/perpetual_ma_cross.py` | 永续合约均线交叉（趋势跟踪） |
 | `assets/templates/funding_rate_arb.py` | 资金费率套利（永续+现货对冲） |
 | `assets/templates/cross_asset_portfolio.py` | 跨资产组合再平衡 |
@@ -215,11 +226,11 @@ description: >
 
 | 文档 | 内容 | 何时阅读 |
 |------|------|----------|
-| [references/signal-guide.md](references/signal-guide.md) | **自然语言→信号映射、指标配置、条件组合** | **收到用户信号描述时（首先阅读）** |
+| [references/signal-guide.md](references/signal-guide.md) | **策略写法、信号格式、条件映射、遗传寻优用法** | **收到用户策略需求时（首先阅读）** |
 | [references/data-sources.md](references/data-sources.md) | 各 API 端点详细参数、限流、数据限制 | 拉数据时 |
 | [references/backtest-engine.md](references/backtest-engine.md) | 保证金/杠杆/资金费率/强平计算公式 | 编写策略或分析结果时 |
 | [references/data-models.md](references/data-models.md) | Symbol 命名、资产类型、支持的合约列表 | 构造请求时 |
-| [references/strategy-sdk.md](references/strategy-sdk.md) | 引擎 API 函数 + 3 个完整策略示例 | 编写策略代码时 |
+| [references/strategy-sdk.md](references/strategy-sdk.md) | 引擎 API 函数 + 完整策略示例 | 编写策略代码时 |
 | [references/interaction-flows.md](references/interaction-flows.md) | 端到端交互场景与验收用例 | 理解完整流程时 |
 
 ---

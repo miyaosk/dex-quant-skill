@@ -1,253 +1,290 @@
-# 信号定制指南
+# 策略与信号指南
 
-本文档教 Agent 如何将用户的自然语言描述转化为可执行的交易信号。
+**核心原则（Eric 定义）：信号是策略产生的。**
 
----
-
-## 核心流程
-
-```
-用户自然语言 → Agent 解析 → 选择指标 → 组合条件 → 生成信号 → 装入策略 → 回测验证
-```
-
-## 四阶段工作流
-
-| 阶段 | 用户说 | Agent 做 |
-|------|--------|----------|
-| 1. 信号定制 | "RSI 低于 30 且放量时买入" | 调用 `Indicators.rsi()` + `Condition.below("rsi", 30) & Condition.above("volume_ratio", 1.5)` |
-| 2. 策略生成 | "用这个信号做 BTC 永续，5 倍杠杆" | 组装 `SignalStrategy`，配置杠杆、仓位、止损止盈 |
-| 3. 交易模拟 | "跑一下去年的行情" | `BacktestEngine` 逐 bar 执行信号 → 开仓/平仓 |
-| 4. 回测验证 | "效果怎么样？" | 输出收益率、夏普、最大回撤、资金费率损益等 |
+策略定义了"什么时候买什么时候卖"的规则。策略在历史数据上运行，产出具体的交易信号。
+信号 = 具体的币种 + 入场时间 + 入场价格 + 方向 + 止盈止损。
+回测引擎基于策略产出的信号去执行交易。
 
 ---
 
-## 第一步：从自然语言提取信号要素
+## 完整流程
 
-### 解析模板
+```
+用户自然语言 (e.g. "帮我做一个 MACD 策略")
+     │
+     ▼
+Agent 追问细节：入场条件？盈亏比？杠杆？仓位？
+     │
+     ▼
+Agent 写策略（Strategy + StrategyRule）
+     │
+     ▼
+策略在历史数据上逐 bar 运行
+     │
+     ▼
+策略产出信号（TradeSignal: 币种/时间/价格/方向/止盈止损）
+     │
+     ▼
+信号驱动回测引擎执行交易
+     │
+     ▼
+输出回测结果 + 信号列表
+     │
+     ├─→ 用户满意 → 策略稳定跑起来
+     └─→ 用户不满意 → 调参数 / 用遗传寻优自动找最优参数
+```
 
-当用户说一句话时，Agent 应提取以下要素：
+---
 
-| 要素 | 示例 |
-|------|------|
-| **指标** | RSI、均线、MACD、布林带、资金费率、持仓量 |
-| **条件** | 大于、小于、交叉上穿、交叉下穿、在…之间 |
-| **阈值** | 70、30、0.05%、20 日 |
-| **方向** | 做多、做空、平仓 |
-| **风控** | 止损 5%、止盈 15%、3 倍杠杆 |
+## Agent 必须追问的信息
 
-### 自然语言 → 代码映射表
+当用户说 "帮我做一个 XXX 策略" 时，Agent 需要确认：
 
-| 用户说 | 转译为 |
-|--------|--------|
+| 信息 | 示例 | 默认值 |
+|------|------|--------|
+| **标的** | BTC-USDT-PERP | 必填 |
+| **入场条件** | MACD 金叉 / RSI < 30 / 布林带突破 | 必填 |
+| **出场条件** | MACD 死叉 / RSI > 50 / 价格回归中轨 | 必填（或用止盈止损） |
+| **杠杆** | 5x | 3x |
+| **仓位比例** | 每次投入总资金的 20% | 20% |
+| **止损** | 价格回撤 5% 平仓 | 5% |
+| **止盈** | 价格上涨 15% 平仓 | 15% |
+| **盈亏比** | 至少 1:3 | 如果用户指定了盈亏比，Agent 反算止盈=止损×盈亏比 |
+| **回测区间** | 最近一年 | 365 天 |
+| **数据频率** | 日线 / 4h / 1h | 1d |
+
+如果用户没指定，用默认值直接跑，回测结果出来后再问是否调整。
+
+---
+
+## 策略写法
+
+### 方式 1：预设策略（一行调用）
+
+```python
+from scripts.signal_builder import (
+    build_macd_strategy,        # MACD 策略
+    build_ma_cross_strategy,    # 均线交叉
+    build_rsi_strategy,         # RSI 超买超卖
+    build_funding_rate_strategy,# 资金费率套利
+    build_bollinger_strategy,   # 布林带突破
+)
+
+# 用户说: "做一个 MACD 策略，BTC，5x 杠杆，止损 5%"
+strategy = build_macd_strategy(
+    symbol="BTC-USDT-PERP",
+    fast=12, slow=26, signal=9,
+    leverage=5,
+    stop_loss_pct=0.05,
+    take_profit_pct=0.15,
+)
+```
+
+### 方式 2：自由组合规则
+
+```python
+from scripts.signal_builder import Strategy, StrategyRule, RuleAction, Condition
+
+strategy = Strategy(
+    name="MACD+RSI 复合策略",
+    symbol="ETH-USDT-PERP",
+    indicators_config={
+        "macd": {"fast": 12, "slow": 26, "signal": 9},
+        "rsi_period": 14,
+    },
+)
+
+# 入场：MACD 金叉 且 RSI < 65
+strategy.add_rule(StrategyRule(
+    "MACD金叉+RSI未超买→做多",
+    RuleAction.OPEN_LONG,
+    Condition.cross_above("macd", "macd_signal") & Condition.below("rsi", 65),
+    leverage=5, position_size=0.2,
+    stop_loss_pct=0.05, take_profit_pct=0.15,
+))
+
+# 出场：MACD 死叉
+strategy.add_rule(StrategyRule(
+    "MACD死叉→平多",
+    RuleAction.CLOSE_LONG,
+    Condition.cross_below("macd", "macd_signal"),
+))
+```
+
+### 方式 3：完全自定义条件
+
+```python
+# 用户有特殊逻辑？用 lambda 写任意 Python 条件
+strategy.add_rule(StrategyRule(
+    "价格突然拉升 3%→做空",
+    RuleAction.OPEN_SHORT,
+    Condition("5min涨幅>3%",
+              lambda ctx: (ctx["close"] - ctx.get("prev_close", ctx["close"]))
+                          / ctx.get("prev_close", ctx["close"]) > 0.03),
+    leverage=3, stop_loss_pct=0.02,
+))
+```
+
+---
+
+## 信号格式
+
+策略运行后产出的每个 TradeSignal 包含：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `signal_id` | string | 唯一标识 |
+| `datetime` | string | 入场/出场时间 |
+| `symbol` | string | 币种，如 BTC-USDT-PERP |
+| `side` | string | "long" 或 "short" |
+| `action` | string | "open"（开仓）或 "close"（平仓） |
+| `price` | float | 入场/出场价格 |
+| `quantity` | float | 仓位比例 |
+| `leverage` | int | 杠杆倍数 |
+| `stop_loss` | float | 止损价格 |
+| `take_profit` | float | 止盈价格 |
+| `reason` | string | 触发原因，如 "macd cross above macd_signal" |
+| `pnl` | float | 平仓时的已实现盈亏 |
+
+### 信号展示（终端表格）
+
+```
+══════════════════════════════════════════════════════════════════════════
+时间                | 币种             | 方向        | 价格         | 止损       止盈       | 盈亏       | 触发原因
+──────────────────────────────────────────────────────────────────────────
+2025-03-15 00:00 | BTC-USDT-PERP    | long  open  | $84,250.00   | SL:$80,037 TP:$96,887 | -          | macd cross above macd_signal
+2025-04-02 00:00 | BTC-USDT-PERP    | long  close | $87,100.00   | -          -          | +2,850.00  | macd cross below macd_signal
+══════════════════════════════════════════════════════════════════════════
+```
+
+### 信号导出
+
+```python
+# JSON
+strategy.signal_log.to_json("signals.json")
+
+# CSV
+strategy.signal_log.to_csv("signals.csv")
+
+# DataFrame
+df = strategy.signal_log.to_dataframe()
+
+# 统计摘要
+print(strategy.signal_log.summary())
+```
+
+---
+
+## 遗传寻优
+
+当用户不确定最优参数时，用遗传算法自动搜索。
+
+### 流程
+
+```
+定义参数空间 → 遗传算法搜索（50 个体 × 30 代）→ 输出最优参数
+    │                                                    │
+    │   ┌────────────────────────────────────┐           │
+    │   │ 每代：                              │           │
+    │   │  1. 用每组参数构建策略               │           │
+    │   │  2. 策略跑回测 → 得到夏普比率        │           │
+    │   │  3. 夏普比率作为适应度               │           │
+    │   │  4. 选择 + 交叉 + 变异 → 下一代     │           │
+    │   └────────────────────────────────────┘           │
+    └──── 收敛/提前终止 ─────────────────────────────────┘
+```
+
+### 代码
+
+```python
+from scripts.optimizer import GeneticOptimizer, ParameterSpace
+
+# 定义参数空间
+space = ParameterSpace()
+space.add_int("fast_period", 5, 30)
+space.add_int("slow_period", 20, 120)
+space.add_float("stop_loss_pct", 0.02, 0.15)
+space.add_float("take_profit_pct", 0.05, 0.40)
+space.add_int("leverage", 1, 10)
+
+# 适应度函数
+def fitness_fn(params):
+    strategy = build_ma_cross_strategy(**params)
+    # ... 跑回测 ...
+    return metrics["sharpe_ratio"]
+
+# 运行
+optimizer = GeneticOptimizer(space, fitness_fn, population_size=50, generations=30)
+result = optimizer.run()
+
+print(result.best_params)    # {"fast_period": 12, "slow_period": 45, ...}
+print(result.best_fitness)   # 2.35
+print(result.summary())      # 完整报告
+```
+
+### 也支持网格搜索（参数空间小时）
+
+```python
+from scripts.optimizer import GridSearch
+
+grid = GridSearch(
+    param_grid={
+        "fast_period": [5, 10, 15, 20],
+        "slow_period": [30, 50, 80],
+        "leverage": [3, 5, 10],
+    },
+    fitness_fn=fitness_fn,
+)
+result = grid.run()
+```
+
+---
+
+## 条件映射表
+
+| 用户说 | Agent 代码 |
+|--------|-----------|
+| "MACD 金叉" | `Condition.cross_above("macd", "macd_signal")` |
+| "MACD 死叉" | `Condition.cross_below("macd", "macd_signal")` |
+| "MACD 柱状图由负转正" | `Condition.cross_above("macd_histogram", ...)` + 自定义 |
 | "RSI 超过 70" | `Condition.above("rsi", 70)` |
 | "RSI 低于 30" | `Condition.below("rsi", 30)` |
-| "快速均线上穿慢速均线" | `Condition.cross_above("fast_ma", "slow_ma")` |
-| "快速均线下穿慢速均线" | `Condition.cross_below("fast_ma", "slow_ma")` |
-| "价格跌破布林带下轨" | `Condition("close < bb_lower", lambda ctx: ctx["close"] < ctx["bb_lower"])` |
+| "均线金叉" | `Condition.cross_above("fast_ma", "slow_ma")` |
+| "均线死叉" | `Condition.cross_below("fast_ma", "slow_ma")` |
+| "跌破布林带下轨" | `Condition("close < bb_lower", lambda ctx: ...)` |
 | "资金费率大于 0.05%" | `Condition.above("funding_rate", 0.0005)` |
 | "成交量放大 1.5 倍" | `Condition.above("volume_ratio", 1.5)` |
-| "价格在 60000 到 65000 之间" | `Condition.between("close", 60000, 65000)` |
-| "MACD 柱状图由负转正" | `Condition.cross_above("macd_histogram", "zero_line")`（需自定义）|
 | "且 / 同时" | `condition_a & condition_b` |
 | "或 / 任一" | `condition_a \| condition_b` |
-| "做多" | `SignalType.ENTRY_LONG` |
-| "做空" | `SignalType.ENTRY_SHORT` |
-| "平多 / 卖出" | `SignalType.EXIT_LONG` |
-| "平空 / 买回" | `SignalType.EXIT_SHORT` |
-| "5 倍杠杆" | `leverage=5` |
-| "止损 3%" | `stop_loss_pct=0.03` |
-| "止盈 10%" | `take_profit_pct=0.10` |
-| "仓位 10%" | `position_size=0.10` |
+| "做多" | `RuleAction.OPEN_LONG` |
+| "做空" | `RuleAction.OPEN_SHORT` |
+| "平多" | `RuleAction.CLOSE_LONG` |
+| "平空" | `RuleAction.CLOSE_SHORT` |
+| "盈亏比 1:3" | `stop_loss_pct=0.05, take_profit_pct=0.15` |
 
 ---
 
-## 第二步：选择/配置指标
+## 可用指标一览
 
-### 可用指标一览
-
-| 指标 | `indicators_config` 键 | 参数 | 默认值 |
-|------|----------------------|------|--------|
-| 简单均线 | `sma_fast` / `sma_slow` | 周期 | 10 / 30 |
-| 指数均线 | `ema_fast` / `ema_slow` | 周期 | 12 / 26 |
-| RSI | `rsi_period` | 周期 | 14 |
-| MACD | `macd: {fast, slow, signal}` | 快/慢/信号 | 12/26/9 |
-| 布林带 | `bollinger: {period, std}` | 周期/标准差 | 20/2.0 |
-| ATR | `atr_period` | 周期 | 14 |
-| 成交量均线 | `volume_ma_period` | 周期 | 20 |
-
-### 指标上下文字段
-
-计算完成后，以下字段会出现在 `ctx` 中供条件使用：
-
-| 字段 | 含义 |
-|------|------|
-| `close` | 当前收盘价 |
-| `high` / `low` | 最高/最低价 |
-| `volume` | 当前成交量 |
-| `funding_rate` | 资金费率 |
-| `open_interest` | 持仓量 |
-| `fast_ma` / `slow_ma` | 快/慢简单均线 |
-| `fast_ema` / `slow_ema` | 快/慢指数均线 |
-| `rsi` | RSI 值 (0-100) |
-| `macd` / `macd_signal` / `macd_histogram` | MACD 三线 |
-| `bb_upper` / `bb_middle` / `bb_lower` | 布林带三轨 |
-| `atr` | 平均真实波幅 |
-| `volume_ma` | 成交量均线 |
-| `volume_ratio` | 成交量/成交量均线 |
-| `prev_*` | 上一个 bar 的对应值（用于交叉判断） |
+| 指标 | `indicators_config` 键 | 参数 | ctx 中的字段 |
+|------|----------------------|------|------------|
+| 简单均线 | `sma_fast` / `sma_slow` | 周期 | `fast_ma` / `slow_ma` |
+| 指数均线 | `ema_fast` / `ema_slow` | 周期 | `fast_ema` / `slow_ema` |
+| RSI | `rsi_period` | 周期 | `rsi` |
+| MACD | `macd: {fast, slow, signal}` | 快/慢/信号 | `macd` / `macd_signal` / `macd_histogram` |
+| 布林带 | `bollinger: {period, std}` | 周期/标准差 | `bb_upper` / `bb_middle` / `bb_lower` |
+| ATR | `atr_period` | 周期 | `atr` |
+| 成交量均线 | `volume_ma_period` | 周期 | `volume_ma` / `volume_ratio` |
+| KDJ | `kdj: {k_period, d_period}` | K/D 周期 | `kdj_k` / `kdj_d` / `kdj_j` |
 
 ---
 
-## 第三步：组装策略
+## Agent 工作原则
 
-### 快捷模式（预设信号组）
-
-Agent 可直接调用预设函数：
-
-```python
-from scripts.signal_builder import (
-    SignalStrategy,
-    build_ma_cross_signals,       # 均线交叉
-    build_rsi_signals,            # RSI 超买超卖
-    build_funding_rate_signals,   # 资金费率套利
-    build_bollinger_signals,      # 布林带突破
-    build_multi_factor_signals,   # 多因子组合
-)
-
-# 用户说: "用双均线策略做 BTC，5 倍杠杆"
-strategy = SignalStrategy(name="BTC 双均线", symbol="BTC-USDT-PERP")
-config, signals = build_ma_cross_signals(fast_period=10, slow_period=30, leverage=5)
-strategy.indicators_config = config
-for sig in signals:
-    strategy.add_signal(sig)
-```
-
-### 自定义模式（用户自由组合）
-
-```python
-from scripts.signal_builder import (
-    SignalStrategy, Signal, SignalType, Condition,
-)
-
-# 用户说: "RSI 低于 30 且放量 1.5 倍以上时做多 ETH，3 倍杠杆，止损 5%"
-strategy = SignalStrategy(
-    name="ETH RSI 超卖放量",
-    symbol="ETH-USDT-PERP",
-    indicators_config={"rsi_period": 14, "volume_ma_period": 20},
-)
-strategy.add_signal(Signal(
-    name="RSI超卖+放量做多",
-    signal_type=SignalType.ENTRY_LONG,
-    condition=Condition.below("rsi", 30) & Condition.above("volume_ratio", 1.5),
-    leverage=3,
-    position_size=0.1,
-    stop_loss_pct=0.05,
-))
-strategy.add_signal(Signal(
-    name="RSI回归平多",
-    signal_type=SignalType.EXIT_LONG,
-    condition=Condition.above("rsi", 50),
-))
-```
-
----
-
-## 第四步：接入回测引擎
-
-```python
-from scripts.data_client import DataClient
-from scripts.backtest_engine import BacktestEngine
-import numpy as np
-
-# 获取数据
-dc = DataClient()
-klines = dc.get_perp_klines("BTCUSDT", "1d", limit=365)
-
-closes = np.array([k["close"] for k in klines])
-highs = np.array([k["high"] for k in klines])
-lows = np.array([k["low"] for k in klines])
-volumes = np.array([k["volume"] for k in klines])
-
-# 初始化回测引擎
-engine = BacktestEngine(initial_capital=100000)
-engine.set_leverage("BTC-USDT-PERP", 5)
-
-# 逐 bar 运行
-prev_ctx = None
-for i in range(30, len(closes)):  # 跳过指标预热期
-    ctx = strategy.compute_context(
-        closes[:i+1], highs[:i+1], lows[:i+1], volumes[:i+1],
-        prev_ctx=prev_ctx,
-    )
-    triggered = strategy.evaluate(ctx)
-    for sig in triggered:
-        if sig.signal_type == SignalType.ENTRY_LONG:
-            engine.open_long("BTC-USDT-PERP", sig.position_size, closes[i])
-        elif sig.signal_type == SignalType.ENTRY_SHORT:
-            engine.open_short("BTC-USDT-PERP", sig.position_size, closes[i])
-        elif sig.signal_type == SignalType.EXIT_LONG:
-            engine.close_long("BTC-USDT-PERP", closes[i])
-        elif sig.signal_type == SignalType.EXIT_SHORT:
-            engine.close_short("BTC-USDT-PERP", closes[i])
-    prev_ctx = ctx
-
-# 输出结果
-metrics = engine.get_metrics()
-print(f"总收益率: {metrics['total_return']:.2%}")
-print(f"夏普比率: {metrics['sharpe_ratio']:.2f}")
-print(f"最大回撤: {metrics['max_drawdown']:.2%}")
-```
-
----
-
-## 常见用户场景 → Agent 应答
-
-### 场景 1: "帮我做一个 RSI 策略"
-
-```
-→ 问清楚: RSI 周期？超买超卖阈值？做什么币？杠杆？
-→ 如果用户没指定，用默认值: RSI(14)，超买 70，超卖 30
-→ 调用 build_rsi_signals()
-→ 展示信号描述 → 用户确认 → 运行回测
-```
-
-### 场景 2: "BTC 资金费率高的时候做空"
-
-```
-→ 确认阈值: "资金费率高于多少算高？默认 0.05%"
-→ 调用 build_funding_rate_signals(open_threshold=0.0005)
-→ 同时建议搭配现货对冲
-```
-
-### 场景 3: "我想在价格跌破布林带下轨时抄底"
-
-```
-→ 调用 build_bollinger_signals()
-→ 只保留 ENTRY_LONG 和 EXIT_LONG 信号
-→ 建议加上 RSI 过滤避免趋势性下跌中抄底
-```
-
-### 场景 4: "综合多个指标判断"
-
-```
-→ 调用 build_multi_factor_signals()
-→ 或用 Condition 的 & / | 自由组合
-→ 展示完整条件链让用户确认
-```
-
-### 场景 5: "我自己有一个特殊逻辑"
-
-```
-→ 用 Condition 的 lambda 模式支持任意 Python 逻辑
-→ 如: Condition("自定义条件", lambda ctx: ctx["close"] > ctx["prev_close"] * 1.03)
-```
-
----
-
-## Agent 关键原则
-
-1. **永远先问清楚再动手** — 用户说"做一个策略"时，追问指标、参数、标的、风控
-2. **展示信号描述** — 生成后调用 `strategy.describe()` 让用户看到完整信号逻辑
-3. **先回测再评价** — 不要主观评价策略好不好，让数据说话
-4. **建议合理的默认值** — 杠杆默认 3-5x，止损 3-5%，仓位 10%
-5. **多信号组合优先** — 单指标信号噪音大，建议用户组合 2-3 个条件
+1. **先问再做** — 用户说做策略，追问细节（入场条件、盈亏比、杠杆）
+2. **展示策略** — 写完策略调 `strategy.describe()` 让用户确认规则
+3. **信号透明** — 回测完展示信号列表和统计，让用户看到每一笔交易
+4. **数据说话** — 不主观评价好不好，看夏普、回撤、胜率
+5. **迭代优化** — 结果不好建议调参数，或用遗传寻优自动找最优
+6. **合理默认** — 杠杆 3x、止损 5%、仓位 20%，用户没指定就用这些

@@ -1,44 +1,45 @@
 # DEX Quant Skill
 
-**加密货币永续合约量化交易 Skill** — 用户用自然语言定制信号，AI Agent 自动完成从信号到回测的全链路。
+**加密货币永续合约量化交易 Skill** — 用户用自然语言描述策略意图，AI Agent 自动写策略、产出信号、跑回测、优化参数。
 
-> "当 RSI 低于 30 且资金费率为负时做多 BTC，5 倍杠杆，止损 3%"
+> "帮我做一个 MACD 策略做 BTC，5 倍杠杆"
 >
-> → Agent 定制信号 → 生成策略 → 执行交易 → 回测验证 → 输出分析报告
+> → Agent 追问细节 → 写策略 → 策略产出交易信号 → 信号驱动回测 → 输出结果 → 遗传寻优找最优参数
 
-## 为什么做这个
+## 核心理念
 
-加密货币永续合约占市场总交易量的 60%-70%，是量化交易者的主战场。但现有的回测工具要么不支持永续合约特有机制（资金费率、保证金、强平），要么需要复杂的编码。
+**信号是策略产生的。** 策略定义了什么时候买什么时候卖的规则。策略在历史数据上运行，产出具体的交易信号（币种 + 入场时间 + 入场价格 + 方向 + 止盈止损）。回测引擎基于策略产出的信号执行交易。
 
-我们的设计理念：**用户从定制信号开始，全程用自然语言，AI 完成四阶段闭环。**
-
-这个 Skill 让 AI Agent（Claude / Codex / Cursor / Copilot 等）具备专业的加密货币量化研究能力，包括：定制交易信号、生成策略代码、拉取真实行情数据、执行回测、分析结果、迭代优化。
+用户不需要写代码。用户描述策略意图 → Agent 追问入场条件、盈亏比、杠杆 → Agent 写策略 → 跑回测 → 看结果 → 调参数或自动寻优。
 
 ---
 
-## 设计架构 — 四阶段工作流
+## 设计架构
 
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    用户（自然语言）                         │
-│      "RSI 低于 30 且放量时做多 BTC，5 倍杠杆，止损 3%"      │
+│          "帮我做一个 MACD 策略做 BTC，5 倍杠杆"             │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
-┌─ Stage 1: 信号定制 ──────────────────────────────────────┐
+┌─ Stage 1: Agent 写策略 ──────────────────────────────────┐
 │  signal_builder.py                                       │
-│  ├── 指标计算 → SMA / EMA / RSI / MACD / Bollinger / ATR │
-│  ├── 条件组合 → above / below / cross / AND / OR / NOT   │
-│  └── 信号输出 → 做多 / 做空 / 平多 / 平空                  │
+│  ├── Agent 追问: 入场条件？出场条件？盈亏比？杠杆？          │
+│  ├── Indicators: SMA / EMA / RSI / MACD / Bollinger / ATR│
+│  ├── Condition: above / below / cross / AND / OR / NOT   │
+│  ├── StrategyRule: 条件满足 → 开多/开空/平多/平空           │
+│  └── Strategy: 多规则组装 → strategy.describe() → 用户确认 │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
-┌─ Stage 2: 策略生成 ──────────────────────────────────────┐
-│  SignalStrategy 组装                                     │
-│  ├── 配置杠杆 / 保证金模式 / 仓位大小                     │
-│  ├── 配置止损 / 止盈 / 滑点                               │
-│  └── strategy.describe() → 展示给用户确认                  │
+┌─ Stage 2: 策略产出信号 ──────────────────────────────────┐
+│  策略在历史数据上逐 bar 运行                                │
+│  ├── 规则满足 → 产出 TradeSignal                           │
+│  │   · signal_id / datetime / symbol / side / action      │
+│  │   · price / stop_loss / take_profit / reason           │
+│  └── SignalLog 存储所有信号 → 导出 JSON / CSV / DataFrame  │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
-┌─ Stage 3: 交易执行 ──────────────────────────────────────┐
+┌─ Stage 3: 信号驱动回测 ──────────────────────────────────┐
 │  📊 data_client.py ← 实时/历史数据                        │
 │  ├── Binance Futures API  → K线/资金费率/持仓量            │
 │  ├── Binance Spot API     → 现货 K线                      │
@@ -54,25 +55,50 @@
 │  └── 止损 / 止盈 / 手续费 / 滑点                           │
 └────────────────────────┬─────────────────────────────────┘
                          ▼
-┌─ Stage 4: 回测验证 ──────────────────────────────────────┐
-│  📈 绩效报告                                              │
+┌─ Stage 4: 结果 + 优化 ──────────────────────────────────┐
+│  📈 绩效报告 + 信号列表                                    │
 │  ├── 收益率 / 夏普 / 最大回撤 / 胜率 / 盈亏比              │
 │  ├── 资金费率损益 / 强平次数 / 手续费                       │
-│  └── Agent 解读 → 优化建议 → 回到 Stage 1 迭代             │
+│  ├── 信号表格: 每笔交易的时间/价格/方向/止盈止损/盈亏       │
+│  │                                                       │
+│  🧬 遗传寻优 (optimizer.py)                               │
+│  ├── 定义参数空间 → 50 个体 × 30 代进化                    │
+│  ├── 适应度 = 跑回测取夏普比率                              │
+│  └── 输出最优参数 + Top N 参数组 + 收敛曲线                 │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **核心设计决策：**
 
-- **信号优先** — 用户从定制信号开始，不需要直接写代码，全程用自然语言
-- **可组合条件** — `Condition.below("rsi", 30) & Condition.above("volume_ratio", 1.5)` 像搭积木一样组合信号
+- **策略是 Agent 写的** — 用户只需描述意图，Agent 追问细节后自动组装策略
+- **信号是策略的输出** — 每笔交易都有具体的币种、时间、价格、方向、止盈止损和触发原因
+- **遗传寻优** — 不知道最优参数？自动搜索（50 个体 × 30 代，锦标赛选择 + 交叉变异）
 - **全部使用公开 API，无需任何 API Key** — 零配置即可使用
-- **本地回测引擎** — 不依赖第三方回测服务，数据安全，可离线运行
-- **闭环迭代** — 回测结果不好？调整信号参数，重新跑，Agent 辅助优化
+- **本地回测引擎** — 不依赖第三方，数据安全，可离线运行
 
 ---
 
 ## 功能全览
+
+### 策略引擎
+
+| 能力 | 说明 |
+|------|------|
+| **预设策略** | MACD / 均线交叉 / RSI / 布林带 / 资金费率套利，一行代码调用 |
+| **自由组合** | `Condition.cross_above() & Condition.below()` 像搭积木一样组合条件 |
+| **自定义逻辑** | `Condition(name, lambda ctx: ...)` 支持任意 Python 表达式 |
+| **信号产出** | 策略运行自动产出 TradeSignal，包含完整交易细节 |
+| **信号存储** | 导出 JSON / CSV / DataFrame，终端表格展示 |
+
+### 遗传寻优
+
+| 能力 | 说明 |
+|------|------|
+| **参数空间** | 支持整数 / 浮点 / 枚举类型 |
+| **遗传算法** | 锦标赛选择 + 均匀交叉 + 变异，精英保留 |
+| **提前终止** | 连续 N 代无提升自动停止 |
+| **网格搜索** | 小参数空间穷举备选 |
+| **结果输出** | 最优参数 + Top N 排名 + 收敛历史 |
 
 ### 数据获取（5 个数据源，20 个方法）
 
@@ -86,53 +112,15 @@
 
 ### 回测引擎
 
-永续合约回测与现货有本质区别，我们的引擎完整实现了以下机制：
-
 | 能力 | 说明 |
 |------|------|
 | **多空双向持仓** | 做多 / 做空 / 反手 / 加仓 / 减仓 |
-| **杠杆** | 1x 到 125x，支持运行中调整 |
-| **保证金模式** | 逐仓（仓位独立，爆仓隔离）和全仓（共享保证金） |
-| **资金费率结算** | 每 8 小时一次（00:00/08:00/16:00 UTC），使用真实历史数据 |
-| **强制平仓** | 保证金率 <= 维持保证金率时自动触发，逐仓/全仓逻辑分别处理 |
-| **止损 / 止盈** | 标记价格触及时自动市价平仓 |
-| **滑点模型** | 固定 bps（BTC/ETH 默认 2bps，其他主流 5bps） |
-| **手续费** | Maker 0.02% / Taker 0.05%，可自定义 |
-
-### 信号定制引擎（核心新特性）
-
-| 组件 | 说明 |
-|------|------|
-| **指标库** | SMA / EMA / RSI / MACD / Bollinger Bands / ATR / 成交量均线 |
-| **条件系统** | `above()` / `below()` / `cross_above()` / `cross_below()` / `between()` + AND/OR/NOT 组合 |
-| **预设信号组** | 均线交叉 / RSI 超买超卖 / 资金费率套利 / 布林带突破 / 多因子组合 |
-
-**自然语言示例：**
-
-| 用户说 | Agent 生成 |
-|--------|-----------|
-| "RSI 低于 30 做多" | `Condition.below("rsi", 30)` → `Signal(ENTRY_LONG)` |
-| "快速均线上穿慢速均线" | `Condition.cross_above("fast_ma", "slow_ma")` |
-| "资金费率 > 0.05% 且 RSI > 70" | `Condition.above("funding_rate", 0.0005) & Condition.above("rsi", 70)` |
-| "价格跌破布林带下轨时抄底" | `Condition("close < bb_lower", ...)` → `Signal(ENTRY_LONG)` |
-
-### 策略模板（开箱即用）
-
-| 模板 | 策略类型 | 说明 |
-|------|---------|------|
-| `custom_signal_strategy.py` | **信号驱动** | 用户自然语言定义信号（推荐入口） |
-| `perpetual_ma_cross.py` | 趋势跟踪 | 双均线交叉，自动开多/开空，含止损止盈 |
-| `funding_rate_arb.py` | 套利 | 资金费率高于阈值时做空永续收取费率，低于阈值平仓 |
-| `cross_asset_portfolio.py` | 组合配置 | BTC + ETH + 黄金（PAXG）按权重分配，定期再平衡 |
-
-### 回测报告输出
-
-每次回测产出四个维度的完整报告：
-
-1. **绩效指标** — 总收益率、年化收益、夏普比率、索提诺比率、最大回撤、卡尔玛比率、胜率、盈亏比
-2. **资金费率损益** — 累计支付、累计收到、净损益（套利策略核心指标）
-3. **净值曲线 + 回撤曲线** — 逐 bar 记录
-4. **交易日志** — 每笔开仓/平仓/强平的完整明细（价格、杠杆、保证金、手续费、滑点、盈亏）
+| **杠杆** | 1x 到 125x |
+| **保证金模式** | 逐仓（爆仓隔离）和全仓（共享保证金） |
+| **资金费率结算** | 每 8 小时，使用真实历史数据 |
+| **强制平仓** | 保证金率 <= 维持保证金率时触发 |
+| **止损 / 止盈** | 标记价格触及时自动平仓 |
+| **滑点 + 手续费** | 固定 bps 滑点 + Maker 0.02% / Taker 0.05% |
 
 ---
 
@@ -146,60 +134,61 @@ cd dex-quant-skill
 pip install -r requirements.txt
 ```
 
-### 方式一：信号驱动策略（推荐）
-
-```python
-from scripts.signal_builder import (
-    SignalStrategy, Signal, SignalType, Condition,
-    build_rsi_signals,
-)
-
-# 用自然语言思维定义信号
-strategy = SignalStrategy(name="BTC RSI策略", symbol="BTC-USDT-PERP")
-config, signals = build_rsi_signals(period=14, overbought=70, oversold=30, leverage=5)
-strategy.indicators_config = config
-for sig in signals:
-    strategy.add_signal(sig)
-
-print(strategy.describe())  # 查看信号逻辑
-```
+### 方式一：策略回测（推荐入口）
 
 ```bash
-# 或直接运行模板
+# MACD 策略回测 — 产出信号 + 绩效报告
 python assets/templates/custom_signal_strategy.py
 ```
 
-### 方式二：直接运行其他策略模板
+### 方式二：遗传寻优
 
 ```bash
-python assets/templates/perpetual_ma_cross.py      # 均线交叉
-python assets/templates/funding_rate_arb.py         # 资金费率套利
-python assets/templates/cross_asset_portfolio.py    # 跨资产组合
+# 自动搜索均线策略最优参数
+python assets/templates/optimize_strategy.py
 ```
 
-### 方式三：Python 代码调用
+### 方式三：Python 代码
 
 ```python
-from scripts.data_client import DataClient
-from scripts.backtest_engine import BacktestEngine, BacktestConfig
+from scripts.signal_builder import build_macd_strategy
 
-client = DataClient()
-klines = client.get_perp_klines("BTC-USDT-PERP", "1d", "2024-01-01", "2025-12-31")
-funding = client.get_funding_rate("BTC-USDT-PERP", "2024-01-01", "2025-12-31")
+# 用户说: "做一个 MACD 策略，BTC，5x 杠杆，止损 5%"
+strategy = build_macd_strategy(
+    symbol="BTC-USDT-PERP",
+    leverage=5,
+    stop_loss_pct=0.05,
+    take_profit_pct=0.15,
+)
 
-engine = BacktestEngine(BacktestConfig(
-    initial_capital=100_000,
-    default_leverage=5,
-    margin_mode="isolated",
-    enable_funding=True,
-))
+# 查看策略规则
+print(strategy.describe())
 
-# 逐 bar 执行策略逻辑...
-result = engine.get_result()
-print(engine.format_summary(result))
+# ... 拉数据 → 逐 bar 运行 → 产出信号 → 驱动回测 ...
+
+# 查看策略产出的信号
+strategy.signal_log.print_table()
+strategy.signal_log.to_json("signals.json")
+print(strategy.signal_log.summary())
 ```
 
-### 方式三：作为 AI Agent Skill 使用
+### 方式四：遗传寻优 API
+
+```python
+from scripts.optimizer import GeneticOptimizer, ParameterSpace
+
+space = ParameterSpace()
+space.add_int("fast_period", 5, 30)
+space.add_int("slow_period", 20, 120)
+space.add_float("stop_loss_pct", 0.02, 0.15)
+space.add_int("leverage", 1, 10)
+
+optimizer = GeneticOptimizer(space, fitness_fn=my_backtest, population_size=50, generations=30)
+result = optimizer.run()
+print(result.summary())    # 最优参数 + Top 5 + 收敛历史
+```
+
+### 方式五：作为 AI Agent Skill 使用
 
 ```bash
 # Codex
@@ -212,7 +201,37 @@ git clone https://github.com/miyaosk/dex-quant-skill ~/.claude/skills/dex-quant-
 npx skillhub install miyaosk/dex-quant-skill
 ```
 
-安装后对 Agent 说自然语言即可，Agent 会自动调用 Skill 中的代码和参考文档。
+安装后对 Agent 说自然语言：
+- "帮我做一个 MACD 策略做 BTC，5 倍杠杆，跑过去一年"
+- "RSI 低于 30 做多 ETH，止损 5%，盈亏比 1:3"
+- "帮我找到均线策略的最优参数"
+- "资金费率高的时候做空 BTC"
+
+---
+
+## 信号格式
+
+策略产出的每个 TradeSignal：
+
+| 字段 | 说明 |
+|------|------|
+| `signal_id` | 唯一标识 |
+| `datetime` | 入场/出场时间 |
+| `symbol` | 币种（如 BTC-USDT-PERP） |
+| `side` | long / short |
+| `action` | open / close |
+| `price` | 入场/出场价格 |
+| `stop_loss` | 止损价格 |
+| `take_profit` | 止盈价格 |
+| `reason` | 触发原因（如 "macd cross above macd_signal"） |
+
+**信号表格示例：**
+
+```
+时间              | 币种             | 方向        | 价格         | 止损       止盈       | 盈亏       | 触发原因
+2025-03-15 00:00 | BTC-USDT-PERP    | long  open  | $84,250.00   | $80,037    $96,887    | -          | macd cross above macd_signal
+2025-04-02 00:00 | BTC-USDT-PERP    | long  close | $87,100.00   | -          -          | +2,850.00  | macd cross below macd_signal
+```
 
 ---
 
@@ -247,23 +266,25 @@ npx skillhub install miyaosk/dex-quant-skill
 
 ```
 dex-quant-skill/
-├── SKILL.md                         # AI Agent 入口文件（自动被 Agent 识别）
+├── SKILL.md                         # AI Agent 入口文件
 ├── clawhub.json                     # Skill 市场元数据
 ├── requirements.txt                 # Python 依赖
 │
 ├── scripts/
-│   ├── signal_builder.py            # 信号定制引擎（指标 + 条件 + 信号 + 策略组装）
+│   ├── signal_builder.py            # 策略引擎（指标 + 条件 + 规则 + 信号产出 + 存储）
+│   ├── optimizer.py                 # 遗传寻优 + 网格搜索
 │   ├── data_client.py               # 多源数据客户端（5 个 API，20 个方法）
 │   └── backtest_engine.py           # 本地回测引擎（保证金/强平/资金费率）
 │
 ├── assets/templates/
-│   ├── custom_signal_strategy.py    # 策略模板：自定义信号驱动（推荐入口）
+│   ├── custom_signal_strategy.py    # 策略模板：策略产出信号 + 回测（推荐入口）
+│   ├── optimize_strategy.py         # 策略模板：遗传寻优找最优参数
 │   ├── perpetual_ma_cross.py        # 策略模板：均线交叉
 │   ├── funding_rate_arb.py          # 策略模板：资金费率套利
 │   └── cross_asset_portfolio.py     # 策略模板：跨资产组合
 │
 └── references/
-    ├── signal-guide.md              # 信号定制指南（自然语言→信号映射）
+    ├── signal-guide.md              # 策略与信号指南（写法 + 条件映射 + 寻优）
     ├── data-sources.md              # 各 API 端点详细文档 + 限流说明
     ├── backtest-engine.md           # 保证金/强平/资金费率计算公式
     ├── data-models.md               # Symbol 命名规范 + 合约列表
@@ -275,8 +296,6 @@ dex-quant-skill/
 
 ## 保证金与强平计算
 
-永续合约回测的核心，完整实现了交易所级别的计算逻辑：
-
 ```
 初始保证金     = 仓位价值 / 杠杆
 维持保证金     = 仓位价值 × 维持保证金率
@@ -284,12 +303,6 @@ dex-quant-skill/
 强平价格（空） = 开仓均价 × (1 + 1/杠杆 - 维持保证金率)
 资金费用       = 仓位价值 × 资金费率（每 8h 结算一次）
 ```
-
-**数值示例：** BTC 多单，开仓价 $60,000，5x 杠杆
-
-- 初始保证金 = $60,000 / 5 = **$12,000**
-- 强平价格 = $60,000 × (1 - 0.2 + 0.005) = **$48,300**
-- BTC 跌到 $48,300（跌幅 19.5%）触发强平
 
 ---
 
