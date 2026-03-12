@@ -270,7 +270,39 @@ dex-quant-skill/
 
 ## 安装
 
-### 一键安装（推荐）
+### 方式一：龙虾 ClawHub 安装
+
+在龙虾（Claw）中直接安装，一行命令即可：
+
+```bash
+clawhub install miyaosk/dex-quant-skill
+```
+
+安装后龙虾会自动识别根目录的 `SKILL.md` 编排器，根据用户意图路由到 5 个子 Skill。
+
+**使用方式：** 安装完成后直接在龙虾对话中发送：
+
+> "帮我设计一个 BTC 4h 趋势突破策略"
+
+Agent 会自动识别意图，加载对应的子 Skill 开始工作。
+
+**更新：**
+
+```bash
+clawhub update miyaosk/dex-quant-skill
+```
+
+**卸载：**
+
+```bash
+clawhub uninstall dex-quant-skill
+```
+
+---
+
+### 方式二：Cursor / Codex 安装
+
+#### 一键安装（推荐）
 
 ```bash
 # 克隆仓库
@@ -305,7 +337,7 @@ cd dex-quant-skill
 └── _dex-quant-skill/      → 仓库实体
 ```
 
-### 手动安装
+#### 手动安装
 
 如果不想用脚本，可以手动操作：
 
@@ -323,7 +355,7 @@ ln -s _dex-quant-skill/execution-guard execution-guard
 ln -s _dex-quant-skill/shared _dex-quant-shared
 ```
 
-### 更新
+#### 更新
 
 ```bash
 # 进入仓库目录拉取最新
@@ -333,15 +365,17 @@ cd ~/.cursor/skills/_dex-quant-skill && git pull
 ./install.sh cursor
 ```
 
-### 卸载
+#### 卸载
 
 ```bash
 ./uninstall.sh cursor    # 或 codex / project /path
 ```
 
+---
+
 ### 安装后验证
 
-重启 Cursor/Codex 后，在对话中试试：
+在对话中试试：
 
 > "帮我设计一个 BTC 4h 趋势突破策略"
 
@@ -354,9 +388,9 @@ Agent 应该会自动调用 `strategy-designer` Skill，开始追问入场条件
 因为 5 个 Skill 共享同一份 `StrategySpec` schema 和生命周期状态机。放在一个仓库里能保证：
 - Schema 变更时所有 Skill 同步更新
 - 版本一致性
-- 一次 clone 即可安装全部
+- 一次 clone / install 即可安装全部
 
-用 symlink 的方式让 Skill 系统（Cursor/Codex）能正确发现每个独立的 SKILL.md，同时保持底层的共享关系。
+龙虾通过根目录的 `SKILL.md` 编排器统一入口，Cursor/Codex 通过 symlink 让每个 Skill 独立可见。
 
 ---
 
