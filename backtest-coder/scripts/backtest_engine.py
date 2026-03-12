@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -29,6 +28,7 @@ from loguru import logger
 
 @dataclass
 class Position:
+    """单个持仓。"""
     symbol: str
     side: str = "none"          # "long" / "short" / "none"
     quantity: float = 0.0
@@ -54,6 +54,11 @@ class Position:
         return 0.0
 
     def calc_liquidation_price(self) -> float:
+        """
+        逐仓强平价格:
+            多单: entry × (1 - 1/leverage + mmr)
+            空单: entry × (1 + 1/leverage - mmr)
+        """
         if self.quantity == 0 or self.side == "none":
             return 0.0
         mmr = self.maintenance_margin_rate
@@ -63,6 +68,7 @@ class Position:
             return self.avg_entry_price * (1 + 1 / self.leverage - mmr)
 
     def calc_margin_ratio(self, mark_price: float) -> float:
+        """保证金率 = (保证金 + 未实现盈亏) / 名义价值"""
         nominal = self.quantity * mark_price
         if nominal == 0:
             return float("inf")
@@ -72,6 +78,7 @@ class Position:
 
 @dataclass
 class TradeRecord:
+    """单笔交易记录。"""
     datetime: str
     symbol: str
     side: str
@@ -89,6 +96,7 @@ class TradeRecord:
 
 @dataclass
 class Account:
+    """账户状态。"""
     initial_capital: float
     balance: float = 0.0
     positions: dict = field(default_factory=dict)
@@ -127,23 +135,45 @@ class Account:
 
 
 # ═══════════════════════════════════════════
-#  回测引擎
+#  回测配置
 # ═══════════════════════════════════════════
 
 @dataclass
 class BacktestConfig:
+    """回测引擎配置。所有参数均可外部化。"""
     initial_capital: float = 100_000.0
     default_leverage: int = 1
-    margin_mode: str = "isolated"
-    slippage_bps: float = 5.0
-    taker_fee: float = 0.0005
-    maker_fee: float = 0.0002
-    enable_funding: bool = True
-    enable_liquidation: bool = True
-    maintenance_margin_rate: float = 0.005
+    margin_mode: str = "isolated"       # "isolated" / "cross"
+    slippage_bps: float = 5.0           # 滑点（基点）
+    taker_fee: float = 0.0005           # Taker 手续费 0.05%
+    maker_fee: float = 0.0002           # Maker 手续费 0.02%
+    enable_funding: bool = True         # 是否启用资金费率结算
+    enable_liquidation: bool = True     # 是否启用强平检查
+    maintenance_margin_rate: float = 0.005  # 维持保证金率 0.5%
 
+
+# ═══════════════════════════════════════════
+#  回测引擎
+# ═══════════════════════════════════════════
 
 class BacktestEngine:
+    """
+    永续合约回测引擎。
+
+    使用方式:
+        config = BacktestConfig(initial_capital=100000, default_leverage=5)
+        engine = BacktestEngine(config)
+
+        for i, row in df.iterrows():
+            # 交易逻辑
+            if signal_long:
+                engine.open_long(symbol, qty, row["close"], row["close"], dt)
+            # 每 bar 更新
+            engine.on_bar(dt, prices, funding_rates)
+
+        result = engine.get_result()
+    """
+
     def __init__(self, config: BacktestConfig = None):
         self.config = config or BacktestConfig()
         self.account = Account(initial_capital=self.config.initial_capital)
@@ -152,35 +182,44 @@ class BacktestEngine:
 
     def open_long(self, symbol: str, qty: float, price: float,
                   mark_price: float, dt: str, leverage: int = None):
+        """开多仓。"""
         self._open_position(symbol, "long", qty, price, mark_price, dt, leverage)
 
     def open_short(self, symbol: str, qty: float, price: float,
                    mark_price: float, dt: str, leverage: int = None):
+        """开空仓。"""
         self._open_position(symbol, "short", qty, price, mark_price, dt, leverage)
 
     def close_long(self, symbol: str, qty: float, price: float,
                    mark_price: float, dt: str):
+        """平多仓。qty=0 表示全部平仓。"""
         self._close_position(symbol, "long", qty, price, mark_price, dt)
 
     def close_short(self, symbol: str, qty: float, price: float,
                     mark_price: float, dt: str):
+        """平空仓。qty=0 表示全部平仓。"""
         self._close_position(symbol, "short", qty, price, mark_price, dt)
 
     def set_stop_loss(self, symbol: str, price: float):
+        """设置止损价。"""
         self.account.get_position(symbol).stop_loss = price
 
     def set_take_profit(self, symbol: str, price: float):
+        """设置止盈价。"""
         self.account.get_position(symbol).take_profit = price
 
     def set_leverage(self, symbol: str, leverage: int):
+        """设置杠杆倍数 (1-125)。"""
         pos = self.account.get_position(symbol)
-        pos.leverage = leverage
+        pos.leverage = max(1, min(125, leverage))
 
     def set_margin_mode(self, symbol: str, mode: str):
+        """设置保证金模式: 'isolated' 或 'cross'。"""
         pos = self.account.get_position(symbol)
         pos.margin_mode = mode
 
     def get_position(self, symbol: str) -> dict:
+        """获取当前持仓信息。"""
         pos = self.account.get_position(symbol)
         return {
             "side": pos.side,
@@ -193,7 +232,7 @@ class BacktestEngine:
             "margin_ratio": pos.calc_margin_ratio(pos.avg_entry_price) if pos.side != "none" else 0,
         }
 
-    # ── 内部操作 ──
+    # ── 内部: 开仓 ──
 
     def _open_position(self, symbol: str, side: str, qty: float, price: float,
                        mark_price: float, dt: str, leverage: int = None):
@@ -211,12 +250,17 @@ class BacktestEngine:
         commission = nominal * self.config.taker_fee
 
         if self.account.available_balance < required_margin + commission:
-            logger.warning(f"[{dt}] 余额不足: 需要 {required_margin + commission:.2f}, 可用 {self.account.available_balance:.2f}")
+            logger.warning(
+                f"[{dt}] 余额不足: 需要 {required_margin + commission:.2f}, "
+                f"可用 {self.account.available_balance:.2f}"
+            )
             return
 
         if pos.side == side and pos.quantity > 0:
             total_qty = pos.quantity + qty
-            pos.avg_entry_price = (pos.avg_entry_price * pos.quantity + fill_price * qty) / total_qty
+            pos.avg_entry_price = (
+                pos.avg_entry_price * pos.quantity + fill_price * qty
+            ) / total_qty
             pos.quantity = total_qty
             pos.margin += required_margin
         else:
@@ -238,6 +282,8 @@ class BacktestEngine:
             commission=commission, slippage=abs(slippage * qty),
             funding_fee=0.0, realized_pnl=0.0,
         ))
+
+    # ── 内部: 平仓 ──
 
     def _close_position(self, symbol: str, side: str, qty: float, price: float,
                         mark_price: float, dt: str, action: str = "close"):
@@ -282,12 +328,17 @@ class BacktestEngine:
 
     # ── 每 bar 检查 ──
 
-    def on_bar(self, dt: str, prices: dict[str, dict], funding_rates: dict[str, float] = None):
+    def on_bar(self, dt: str, prices: dict[str, dict],
+               funding_rates: dict[str, float] = None):
         """
-        每个 bar 调用一次。执行: 更新盈亏 → 资金费率结算 → 止损止盈 → 强平检查 → 记录净值。
+        每个 bar 调用一次。
 
-        prices: {symbol: {"close": float, "high": float, "low": float, "mark_price": float}}
-        funding_rates: {symbol: float} — 仅在结算时刻传入
+        执行顺序: 更新盈亏 → 资金费率结算 → 止损止盈 → 强平检查 → 记录净值
+
+        参数:
+            dt: 当前 bar 时间
+            prices: {symbol: {"close": float, "high": float, "low": float, "mark_price": float}}
+            funding_rates: {symbol: float} — 仅在 8h 结算时刻传入
         """
         for symbol, pos in list(self.account.positions.items()):
             if pos.side == "none":
@@ -318,6 +369,7 @@ class BacktestEngine:
 
     def _settle_funding(self, pos: Position, funding_rate: float,
                         mark_price: float, dt: str):
+        """资金费率结算。"""
         nominal = pos.quantity * mark_price
         fee = nominal * funding_rate
 
@@ -346,44 +398,48 @@ class BacktestEngine:
         })
 
     def _check_stop_loss_take_profit(self, pos: Position, bar: dict, dt: str):
+        """检查止损/止盈是否触发。"""
         high = bar.get("high", bar.get("close", 0))
         low = bar.get("low", bar.get("close", 0))
         mark = bar.get("mark_price", bar.get("close", 0))
 
         if pos.stop_loss is not None:
-            triggered = (pos.side == "long" and low <= pos.stop_loss) or \
-                        (pos.side == "short" and high >= pos.stop_loss)
+            triggered = (
+                (pos.side == "long" and low <= pos.stop_loss)
+                or (pos.side == "short" and high >= pos.stop_loss)
+            )
             if triggered:
                 logger.info(f"[{dt}] 止损触发: {pos.symbol} {pos.side} @ {pos.stop_loss}")
-                if pos.side == "long":
-                    self._close_position(pos.symbol, "long", pos.quantity,
-                                         pos.stop_loss, mark, dt, "close")
-                else:
-                    self._close_position(pos.symbol, "short", pos.quantity,
-                                         pos.stop_loss, mark, dt, "close")
+                self._close_position(
+                    pos.symbol, pos.side, pos.quantity,
+                    pos.stop_loss, mark, dt, "close",
+                )
                 return
 
         if pos.take_profit is not None:
-            triggered = (pos.side == "long" and high >= pos.take_profit) or \
-                        (pos.side == "short" and low <= pos.take_profit)
+            triggered = (
+                (pos.side == "long" and high >= pos.take_profit)
+                or (pos.side == "short" and low <= pos.take_profit)
+            )
             if triggered:
                 logger.info(f"[{dt}] 止盈触发: {pos.symbol} {pos.side} @ {pos.take_profit}")
-                if pos.side == "long":
-                    self._close_position(pos.symbol, "long", pos.quantity,
-                                         pos.take_profit, mark, dt, "close")
-                else:
-                    self._close_position(pos.symbol, "short", pos.quantity,
-                                         pos.take_profit, mark, dt, "close")
+                self._close_position(
+                    pos.symbol, pos.side, pos.quantity,
+                    pos.take_profit, mark, dt, "close",
+                )
 
     def _check_liquidation(self, pos: Position, mark_price: float, dt: str):
+        """强平检查。"""
         if pos.side == "none" or pos.quantity == 0:
             return
 
         margin_ratio = pos.calc_margin_ratio(mark_price)
 
         if margin_ratio <= pos.maintenance_margin_rate:
-            logger.warning(f"[{dt}] 强平: {pos.symbol} {pos.side} "
-                           f"保证金率 {margin_ratio:.4f} <= {pos.maintenance_margin_rate}")
+            logger.warning(
+                f"[{dt}] 强平: {pos.symbol} {pos.side} "
+                f"保证金率 {margin_ratio:.4f} <= {pos.maintenance_margin_rate}"
+            )
             lost_margin = pos.margin
             pos.quantity = 0
             pos.side = "none"
@@ -404,6 +460,7 @@ class BacktestEngine:
     # ── 结果汇总 ──
 
     def get_result(self) -> dict:
+        """获取完整回测结果。"""
         eq_df = pd.DataFrame(self.account.equity_curve)
         if eq_df.empty:
             return {"error": "无回测数据"}
@@ -414,33 +471,35 @@ class BacktestEngine:
         eq_df["drawdown"] = drawdowns
 
         returns = np.diff(equities) / equities[:-1] if len(equities) > 1 else np.array([0])
-        daily_returns = returns
 
         total_return = (equities[-1] / equities[0]) - 1
         n_days = len(equities)
         annual_return = (1 + total_return) ** (365 / max(n_days, 1)) - 1
-        volatility = float(np.std(daily_returns) * np.sqrt(365)) if len(daily_returns) > 1 else 0
+        volatility = float(np.std(returns) * np.sqrt(365)) if len(returns) > 1 else 0
 
         rf = 0.0
         sharpe = (annual_return - rf) / volatility if volatility > 0 else 0
-        downside = daily_returns[daily_returns < 0]
+        downside = returns[returns < 0]
         downside_std = float(np.std(downside) * np.sqrt(365)) if len(downside) > 0 else 0
         sortino = (annual_return - rf) / downside_std if downside_std > 0 else 0
 
         max_dd = float(np.min(drawdowns))
-        max_dd_idx = np.argmin(drawdowns)
-        peak_idx = np.argmax(equities[:max_dd_idx + 1]) if max_dd_idx > 0 else 0
+        max_dd_idx = int(np.argmin(drawdowns))
+        peak_idx = int(np.argmax(equities[:max_dd_idx + 1])) if max_dd_idx > 0 else 0
         max_dd_duration = max_dd_idx - peak_idx
 
         calmar = annual_return / abs(max_dd) if max_dd != 0 else 0
 
         trades = self.account.trade_log
-        close_trades = [t for t in trades if t.action in ("close", "liquidation") and t.realized_pnl != 0]
+        close_trades = [
+            t for t in trades
+            if t.action in ("close", "liquidation") and t.realized_pnl != 0
+        ]
         wins = [t for t in close_trades if t.realized_pnl > 0]
         losses = [t for t in close_trades if t.realized_pnl < 0]
         win_rate = len(wins) / len(close_trades) if close_trades else 0
-        avg_win = np.mean([t.realized_pnl for t in wins]) if wins else 0
-        avg_loss = abs(np.mean([t.realized_pnl for t in losses])) if losses else 0
+        avg_win = float(np.mean([t.realized_pnl for t in wins])) if wins else 0
+        avg_loss = float(abs(np.mean([t.realized_pnl for t in losses]))) if losses else 0
         profit_loss_ratio = avg_win / avg_loss if avg_loss > 0 else float("inf")
 
         net_funding = self.account.total_funding_received - self.account.total_funding_paid
@@ -470,8 +529,14 @@ class BacktestEngine:
             "funding_log": self.account.funding_log,
         }
 
+    def get_metrics(self) -> dict:
+        """获取绩效指标摘要（不含完整曲线和日志）。"""
+        result = self.get_result()
+        return result.get("performance", result)
+
     @staticmethod
     def format_summary(result: dict) -> str:
+        """格式化输出回测结果摘要。"""
         p = result.get("performance", {})
         lines = [
             "═══ 回测结果摘要 ═══",

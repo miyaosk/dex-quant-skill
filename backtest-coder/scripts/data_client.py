@@ -23,6 +23,7 @@ from loguru import logger
 BINANCE_FUTURES_BASE = "https://fapi.binance.com"
 BINANCE_SPOT_BASE = "https://api.binance.com"
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
+DEFILLAMA_BASE = "https://api.llama.fi"
 
 INTERVAL_MAP = {
     "1m": "1m", "5m": "5m", "15m": "15m",
@@ -36,26 +37,19 @@ COINGECKO_IDS = {
     "OMMF": "ondo-us-dollar-yield",
 }
 
-DEFILLAMA_BASE = "https://api.llama.fi"
-
 # yfinance ticker 映射
 YFINANCE_TICKERS = {
-    # 美股
     "RWA:AAPL": "AAPL", "RWA:NVDA": "NVDA", "RWA:TSLA": "TSLA",
     "RWA:MSFT": "MSFT", "RWA:GOOGL": "GOOGL", "RWA:AMZN": "AMZN",
     "RWA:META": "META", "RWA:SPY": "SPY", "RWA:QQQ": "QQQ",
-    # 大宗商品期货
-    "COMM:WTI": "CL=F",      # WTI 原油
-    "COMM:BRENT": "BZ=F",    # 布伦特原油
-    "COMM:NG": "NG=F",       # 天然气
-    "COMM:COPPER": "HG=F",   # 铜
-    # 贵金属现货
-    "METAL:XAU-SPOT": "GC=F",  # 黄金期货（最接近现货的代理）
-    "METAL:XAG-SPOT": "SI=F",  # 白银期货
+    "COMM:WTI": "CL=F", "COMM:BRENT": "BZ=F",
+    "COMM:NG": "NG=F", "COMM:COPPER": "HG=F",
+    "METAL:XAU-SPOT": "GC=F", "METAL:XAG-SPOT": "SI=F",
 }
 
 
 def _ts_ms(dt_str: str) -> int:
+    """日期字符串 (YYYY-MM-DD) 转毫秒时间戳。"""
     dt = datetime.strptime(dt_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     return int(dt.timestamp() * 1000)
 
@@ -67,6 +61,8 @@ def _symbol_to_binance(symbol: str) -> str:
 
 
 class DataClient:
+    """多源数据客户端，支持 Binance / CoinGecko / yfinance / DeFi Llama。"""
+
     def __init__(self, proxy: Optional[str] = None):
         import os
         proxy_url = proxy or os.environ.get("PROXY_URL")
@@ -76,6 +72,7 @@ class DataClient:
         )
 
     def _get(self, url: str, params: dict = None) -> dict | list:
+        """带 429 限流重试的 GET 请求。"""
         resp = self._client.get(url, params=params)
         if resp.status_code == 429:
             retry = int(resp.headers.get("Retry-After", "5"))
@@ -102,7 +99,18 @@ class DataClient:
 
         Binance 端点: GET /fapi/v1/klines
         无需 API Key，限流 2400 次/分钟。
-        单次最多 1500 条，超过需分页拉取。
+        单次最多 1500 条，自动分页拉取完整历史。
+
+        参数:
+            symbol: 合约代码，如 "BTC-USDT-PERP"
+            interval: K 线周期 (1m/5m/15m/1h/4h/1d)
+            start_date: 起始日期 "YYYY-MM-DD"
+            end_date: 结束日期 "YYYY-MM-DD"
+            limit: 单次请求条数（最大 1500）
+
+        返回:
+            DataFrame [datetime, open, high, low, close, volume,
+                       volume_usd, trades, taker_buy_volume_usd, taker_sell_volume_usd]
         """
         bn_symbol = _symbol_to_binance(symbol)
         all_rows = []
@@ -140,8 +148,10 @@ class DataClient:
         for col in ["open", "high", "low", "close", "volume", "quote_volume",
                      "taker_buy_volume", "taker_buy_quote_volume"]:
             df[col] = df[col].astype(float)
-        df = df.rename(columns={"quote_volume": "volume_usd",
-                                 "taker_buy_quote_volume": "taker_buy_volume_usd"})
+        df = df.rename(columns={
+            "quote_volume": "volume_usd",
+            "taker_buy_quote_volume": "taker_buy_volume_usd",
+        })
         df["taker_sell_volume_usd"] = df["volume_usd"] - df["taker_buy_volume_usd"]
         return df[["datetime", "open", "high", "low", "close", "volume",
                     "volume_usd", "trades", "taker_buy_volume_usd",
@@ -158,7 +168,10 @@ class DataClient:
         资金费率历史。
 
         Binance 端点: GET /fapi/v1/fundingRate
-        每 8 小时一条，单次最多 1000 条，需分页。
+        每 8 小时一条，自动分页拉取。
+
+        返回:
+            DataFrame [datetime, funding_rate, mark_price]
         """
         bn_symbol = _symbol_to_binance(symbol)
         all_rows = []
@@ -189,14 +202,16 @@ class DataClient:
 
     def get_open_interest(self, symbol: str) -> dict:
         """
-        当前持仓量。
+        当前持仓量快照。
 
         Binance 端点: GET /fapi/v1/openInterest
         仅返回当前快照，不含历史。
         """
         bn_symbol = _symbol_to_binance(symbol)
-        data = self._get(f"{BINANCE_FUTURES_BASE}/fapi/v1/openInterest",
-                         {"symbol": bn_symbol})
+        data = self._get(
+            f"{BINANCE_FUTURES_BASE}/fapi/v1/openInterest",
+            {"symbol": bn_symbol},
+        )
         return {
             "symbol": symbol,
             "open_interest": float(data["openInterest"]),
@@ -213,7 +228,7 @@ class DataClient:
         持仓量历史统计。
 
         Binance 端点: GET /futures/data/openInterestHist
-        ⚠️ 限制: 仅最近 30 天数据。更长历史需自行存储或使用 Coinglass(付费)。
+        ⚠️ 限制: 仅最近 30 天数据。
         """
         pair = _symbol_to_binance(symbol).replace("USDT", "")
         data = self._get(f"{BINANCE_FUTURES_BASE}/futures/data/openInterestHist", {
@@ -266,8 +281,10 @@ class DataClient:
         Binance 端点: GET /fapi/v1/premiumIndex
         """
         bn_symbol = _symbol_to_binance(symbol)
-        data = self._get(f"{BINANCE_FUTURES_BASE}/fapi/v1/premiumIndex",
-                         {"symbol": bn_symbol})
+        data = self._get(
+            f"{BINANCE_FUTURES_BASE}/fapi/v1/premiumIndex",
+            {"symbol": bn_symbol},
+        )
         return {
             "symbol": symbol,
             "mark_price": float(data["markPrice"]),
@@ -293,7 +310,7 @@ class DataClient:
             raise ValueError(f"合约 {symbol} 未找到")
 
         return [
-            self._parse_contract_info(s, f"{s.get('baseAsset','')}-{s.get('quoteAsset','')}-PERP")
+            self._parse_contract_info(s, f"{s.get('baseAsset', '')}-{s.get('quoteAsset', '')}-PERP")
             for s in symbols
             if s.get("contractType") == "PERPETUAL"
         ]
@@ -316,6 +333,15 @@ class DataClient:
             "required_margin_rate": float(raw.get("requiredMarginPercent", 5)) / 100,
         }
 
+    def list_perp_symbols(self) -> list[str]:
+        """列出 Binance 所有永续合约代码。"""
+        data = self._get(f"{BINANCE_FUTURES_BASE}/fapi/v1/exchangeInfo")
+        return [
+            f"{s['baseAsset']}-{s['quoteAsset']}-PERP"
+            for s in data.get("symbols", [])
+            if s.get("contractType") == "PERPETUAL" and s.get("status") == "TRADING"
+        ]
+
     # ════════════════════════════════════════
     #  Binance Spot — 现货
     # ════════════════════════════════════════
@@ -332,6 +358,10 @@ class DataClient:
         现货 K 线。
 
         Binance 端点: GET /api/v3/klines
+        自动分页，无限历史。
+
+        返回:
+            DataFrame [datetime, open, high, low, close, volume, volume_usd]
         """
         bn_symbol = _symbol_to_binance(symbol)
         all_rows = []
@@ -367,7 +397,7 @@ class DataClient:
                     "volume_usd"]].reset_index(drop=True)
 
     # ════════════════════════════════════════
-    #  CoinGecko — 代币价格（PAXG/XAUT 等）
+    #  CoinGecko — 代币价格
     # ════════════════════════════════════════
 
     def get_token_history(
@@ -379,7 +409,14 @@ class DataClient:
         代币价格历史（日线）。
 
         CoinGecko 端点: GET /api/v3/coins/{id}/market_chart
-        免费版限流 10-30 次/分钟。日线最多 365 天免费。
+        免费版限流 10-30 次/分钟，日线最多 365 天。
+
+        参数:
+            token: 代币名称 (PAXG/XAUT/OUSG 等)
+            days: 历史天数
+
+        返回:
+            DataFrame [datetime, close, volume_usd, market_cap]
         """
         cg_id = COINGECKO_IDS.get(token.upper(), token.lower())
         data = self._get(f"{COINGECKO_BASE}/coins/{cg_id}/market_chart", {
@@ -403,7 +440,7 @@ class DataClient:
         return df.drop(columns=["timestamp"]).reset_index(drop=True)
 
     # ════════════════════════════════════════
-    #  yfinance — 美股 / 大宗商品 / 贵金属现货
+    #  yfinance — 美股 / 大宗商品 / 贵金属
     # ════════════════════════════════════════
 
     @staticmethod
@@ -419,7 +456,9 @@ class DataClient:
         数据源: yfinance（Yahoo Finance 公开数据）
         支持 Symbol: RWA:AAPL / RWA:SPY / RWA:QQQ 等
         历史深度: 日线 30+ 年
-        免费，无需 Key，无严格限流。
+
+        返回:
+            DataFrame [datetime, open, high, low, close, volume, volume_usd, dividends?]
         """
         import yfinance as yf
 
@@ -460,15 +499,20 @@ class DataClient:
         大宗商品期货 K 线。
 
         数据源: yfinance
-        支持 Symbol: COMM:WTI / COMM:BRENT / COMM:NG / COMM:COPPER
+        支持: COMM:WTI / COMM:BRENT / COMM:NG / COMM:COPPER
         历史深度: 10+ 年
+
+        返回:
+            DataFrame [datetime, open, high, low, close, volume, volume_usd]
         """
         import yfinance as yf
 
         ticker = YFINANCE_TICKERS.get(symbol.upper())
         if not ticker:
-            raise ValueError(f"未知大宗商品 Symbol: {symbol}，"
-                             f"支持: {[k for k in YFINANCE_TICKERS if k.startswith('COMM:')]}")
+            raise ValueError(
+                f"未知大宗商品 Symbol: {symbol}，"
+                f"支持: {[k for k in YFINANCE_TICKERS if k.startswith('COMM:')]}"
+            )
 
         tk = yf.Ticker(ticker)
         df = tk.history(start=start_date, end=end_date, interval=interval)
@@ -500,14 +544,17 @@ class DataClient:
         数据源: yfinance (GC=F 黄金期货 / SI=F 白银期货)
         支持: METAL:XAU-SPOT / METAL:XAG-SPOT
         历史深度: 10+ 年
-        注意: 期货价格与伦敦定盘价有微小差异，但趋势一致。
+
+        返回:
+            DataFrame [datetime, open, high, low, close, volume]
         """
         import yfinance as yf
 
         ticker = YFINANCE_TICKERS.get(symbol.upper())
         if not ticker:
-            raise ValueError(f"未知贵金属 Symbol: {symbol}，"
-                             f"支持: METAL:XAU-SPOT / METAL:XAG-SPOT")
+            raise ValueError(
+                f"未知贵金属 Symbol: {symbol}，支持: METAL:XAU-SPOT / METAL:XAG-SPOT"
+            )
 
         tk = yf.Ticker(ticker)
         df = tk.history(start=start_date, end=end_date, interval="1d")
@@ -527,7 +574,7 @@ class DataClient:
                     "volume"]].reset_index(drop=True)
 
     # ════════════════════════════════════════
-    #  DeFi Llama — 协议 TVL / 手续费（免费端点）
+    #  DeFi Llama — 协议 TVL / 手续费
     # ════════════════════════════════════════
 
     def get_protocol_tvl(self, protocol: str) -> pd.DataFrame:
@@ -535,8 +582,11 @@ class DataClient:
         协议 TVL 历史。
 
         DeFi Llama 端点: GET /api/protocol/{slug}
-        免费，无需 Key，无严格限流。
+        免费，无需 Key。
         支持: aave, compound-v3, lido, curve-dex, uniswap 等
+
+        返回:
+            DataFrame [datetime, tvl_usd]
         """
         data = self._get(f"{DEFILLAMA_BASE}/api/protocol/{protocol}")
         tvl_history = data.get("tvl", [])
@@ -571,14 +621,19 @@ class DataClient:
 
         DeFi Llama 端点: GET /api/overview/fees
         免费，返回所有协议的 24h 手续费和收入。
+
+        返回:
+            DataFrame [name, category, fees_24h, fees_7d, fees_30d, revenue_24h]
         """
         data = self._get(f"{DEFILLAMA_BASE}/api/overview/fees")
         protocols = data.get("protocols", [])
 
         if protocol:
-            protocols = [p for p in protocols if
-                         p.get("name", "").lower() == protocol.lower() or
-                         p.get("slug", "") == protocol.lower()]
+            protocols = [
+                p for p in protocols
+                if p.get("name", "").lower() == protocol.lower()
+                or p.get("slug", "") == protocol.lower()
+            ]
 
         if not protocols:
             return pd.DataFrame()
@@ -600,6 +655,9 @@ class DataClient:
         所有 DeFi 协议列表及 TVL。
 
         DeFi Llama 端点: GET /api/protocols
+
+        返回:
+            DataFrame [name, slug, category, chains, tvl] (前 200 个)
         """
         data = self._get(f"{DEFILLAMA_BASE}/api/protocols")
         rows = []
@@ -614,17 +672,8 @@ class DataClient:
         return pd.DataFrame(rows)
 
     # ════════════════════════════════════════
-    #  工具方法
+    #  生命周期
     # ════════════════════════════════════════
-
-    def list_perp_symbols(self) -> list[str]:
-        """列出 Binance 所有永续合约代码。"""
-        data = self._get(f"{BINANCE_FUTURES_BASE}/fapi/v1/exchangeInfo")
-        return [
-            f"{s['baseAsset']}-{s['quoteAsset']}-PERP"
-            for s in data.get("symbols", [])
-            if s.get("contractType") == "PERPETUAL" and s.get("status") == "TRADING"
-        ]
 
     def close(self):
         self._client.close()
