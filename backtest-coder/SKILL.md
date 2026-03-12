@@ -111,14 +111,51 @@ description: >
 
 ---
 
-## 脚本参考
+## 执行方式
 
-| 脚本 | 功能 | 何时使用 |
-|------|------|----------|
-| [scripts/data_client.py](scripts/data_client.py) | 多源数据客户端 | 拉取 K 线、资金费率、持仓量等数据 |
-| [scripts/backtest_engine.py](scripts/backtest_engine.py) | 永续合约回测引擎 | 执行策略回测（保证金/强平/资金费率） |
-| [scripts/indicators.py](scripts/indicators.py) | 技术指标库 | 计算 SMA/EMA/RSI/MACD/布林带等 |
-| [scripts/optimizer.py](scripts/optimizer.py) | 参数优化器 | 遗传算法 + 网格搜索优化策略参数 |
+回测计算通过 **DEX Quant Server** 后端 API 完成，Skill 端不在本地跑引擎。
+
+### API 回测（推荐，适合 Claw/线上环境）
+
+使用 [scripts/api_client.py](scripts/api_client.py) 调用后端服务：
+
+```python
+from api_client import QuantAPIClient
+
+client = QuantAPIClient("https://your-server.com")
+result = client.run_backtest(
+    strategy=strategy_spec,
+    start_date="2023-01-01",
+    end_date="2025-12-31",
+)
+client.print_metrics(result)
+client.print_trades(result)
+```
+
+后端服务地址由环境变量 `QUANT_SERVER_URL` 配置，默认 `http://localhost:8000`。
+
+### 本地回测（Cursor/Codex 环境）
+
+如果用户在本地开发环境，也可直接使用本地脚本：
+
+| 脚本 | 功能 |
+|------|------|
+| [scripts/data_client.py](scripts/data_client.py) | 多源数据客户端 |
+| [scripts/backtest_engine.py](scripts/backtest_engine.py) | 回测引擎 |
+| [scripts/indicators.py](scripts/indicators.py) | 技术指标库 |
+| [scripts/optimizer.py](scripts/optimizer.py) | 参数优化器 |
+
+## API 客户端参考
+
+| 方法 | 说明 |
+|------|------|
+| `client.run_backtest(spec, start, end)` | 提交回测 → 返回完整结果 |
+| `client.get_backtest(id)` | 查询已有回测结果 |
+| `client.get_klines(symbol, interval, start, end)` | 获取 K 线（服务器缓存） |
+| `client.save_strategy(spec)` | 保存策略到服务器 |
+| `client.list_strategies()` | 列出所有策略 |
+| `client.print_metrics(result)` | 格式化打印绩效 |
+| `client.print_trades(result)` | 格式化打印交易记录 |
 
 ---
 
