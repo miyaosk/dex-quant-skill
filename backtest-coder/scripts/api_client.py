@@ -130,19 +130,56 @@ class QuantAPIClient:
 
     def save_strategy(self, spec: dict) -> dict:
         """保存策略到服务器"""
-        resp = self._client.post(f"{self.base_url}/strategy/", json=spec)
+        resp = self._client.post(f"{self.base_url}/strategies/", json=spec)
         resp.raise_for_status()
         return resp.json()
 
     def list_strategies(self) -> list[dict]:
         """列出所有策略"""
-        resp = self._client.get(f"{self.base_url}/strategy/")
+        resp = self._client.get(f"{self.base_url}/strategies/")
         resp.raise_for_status()
         return resp.json()
 
     def get_strategy(self, strategy_id: str) -> dict:
         """获取策略详情"""
-        resp = self._client.get(f"{self.base_url}/strategy/{strategy_id}")
+        resp = self._client.get(f"{self.base_url}/strategies/{strategy_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+    # ═══════════════ 信号 ═══════════════
+
+    def save_signal(self, signal: dict) -> dict:
+        """保存一条交易信号到服务器"""
+        resp = self._client.post(f"{self.base_url}/signals/", json=signal)
+        resp.raise_for_status()
+        logger.info("信号已保存 | {} {} {}", signal.get("symbol"), signal.get("signal_type"), signal.get("signal_id"))
+        return resp.json()
+
+    def save_signals_batch(self, signals: list[dict]) -> dict:
+        """批量保存信号"""
+        resp = self._client.post(f"{self.base_url}/signals/batch", json=signals)
+        resp.raise_for_status()
+        return resp.json()
+
+    def query_signals(
+        self,
+        strategy_id: str = None,
+        symbol: str = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """查询信号"""
+        payload = {"limit": limit}
+        if strategy_id:
+            payload["strategy_id"] = strategy_id
+        if symbol:
+            payload["symbol"] = symbol
+        resp = self._client.post(f"{self.base_url}/signals/query", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_signal(self, signal_id: str) -> dict:
+        """获取单条信号详情"""
+        resp = self._client.get(f"{self.base_url}/signals/{signal_id}")
         resp.raise_for_status()
         return resp.json()
 
