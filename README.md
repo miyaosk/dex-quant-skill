@@ -268,6 +268,98 @@ dex-quant-skill/
 
 ---
 
+## 安装
+
+### 一键安装（推荐）
+
+```bash
+# 克隆仓库
+git clone https://github.com/miyaosk/dex-quant-skill.git
+cd dex-quant-skill
+
+# 安装到 Cursor（个人级，所有项目可用）
+./install.sh cursor
+
+# 或安装到 Codex
+./install.sh codex
+
+# 或安装到指定项目
+./install.sh project /path/to/your/project
+```
+
+安装脚本会：
+1. 将仓库克隆到 skills 目录下的 `_dex-quant-skill/`
+2. 为每个 Skill 创建 symlink 到 skills 目录
+3. 共享的 `shared/schemas/` 也会 symlink 到 `_dex-quant-shared/`
+
+安装后的目录结构：
+
+```
+~/.cursor/skills/
+├── strategy-designer/     → symlink
+├── backtest-coder/        → symlink
+├── backtest-reviewer/     → symlink
+├── signal-runtime-builder/→ symlink
+├── execution-guard/       → symlink
+├── _dex-quant-shared/     → symlink (shared schemas)
+└── _dex-quant-skill/      → 仓库实体
+```
+
+### 手动安装
+
+如果不想用脚本，可以手动操作：
+
+```bash
+# 1. 克隆到 skills 目录
+git clone https://github.com/miyaosk/dex-quant-skill.git ~/.cursor/skills/_dex-quant-skill
+
+# 2. 为每个 Skill 创建 symlink
+cd ~/.cursor/skills
+ln -s _dex-quant-skill/strategy-designer strategy-designer
+ln -s _dex-quant-skill/backtest-coder backtest-coder
+ln -s _dex-quant-skill/backtest-reviewer backtest-reviewer
+ln -s _dex-quant-skill/signal-runtime-builder signal-runtime-builder
+ln -s _dex-quant-skill/execution-guard execution-guard
+ln -s _dex-quant-skill/shared _dex-quant-shared
+```
+
+### 更新
+
+```bash
+# 进入仓库目录拉取最新
+cd ~/.cursor/skills/_dex-quant-skill && git pull
+
+# 或重新运行安装脚本（会自动 pull）
+./install.sh cursor
+```
+
+### 卸载
+
+```bash
+./uninstall.sh cursor    # 或 codex / project /path
+```
+
+### 安装后验证
+
+重启 Cursor/Codex 后，在对话中试试：
+
+> "帮我设计一个 BTC 4h 趋势突破策略"
+
+Agent 应该会自动调用 `strategy-designer` Skill，开始追问入场条件、止损止盈等细节。
+
+---
+
+## 为什么不拆成 5 个 GitHub 仓库？
+
+因为 5 个 Skill 共享同一份 `StrategySpec` schema 和生命周期状态机。放在一个仓库里能保证：
+- Schema 变更时所有 Skill 同步更新
+- 版本一致性
+- 一次 clone 即可安装全部
+
+用 symlink 的方式让 Skill 系统（Cursor/Codex）能正确发现每个独立的 SKILL.md，同时保持底层的共享关系。
+
+---
+
 ## License
 
 MIT
