@@ -1,0 +1,3 @@
+display_name: "DEX Quant Skill"
+short_description: "AI 量化交易平台 — 策略设计→回测→评审→信号→执行"
+default_prompt: "帮我设计一个加密货币量化策略"
