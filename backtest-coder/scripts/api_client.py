@@ -183,6 +183,138 @@ class QuantAPIClient:
         resp.raise_for_status()
         return resp.json()
 
+    # ═══════════════ 交易 ═══════════════
+
+    def record_trade(
+        self,
+        strategy_id: str,
+        exchange: str,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float,
+        fee: float = 0,
+        signal_id: str = None,
+        leverage: int = 1,
+        order_type: str = "market",
+        exchange_order_id: str = None,
+        notes: str = None,
+    ) -> dict:
+        """
+        记录一笔实盘交易。
+
+        参数:
+            exchange: 交易平台 "binance" / "hyperliquid"
+            symbol: 交易对 "BTCUSDT"
+            side: 方向 "buy" / "sell"
+            quantity: 数量
+            price: 成交价格
+
+        会自动更新持仓和 PnL。
+        """
+        payload = {
+            "strategy_id": strategy_id,
+            "exchange": exchange,
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "price": price,
+            "fee": fee,
+            "order_type": order_type,
+            "leverage": leverage,
+        }
+        if signal_id:
+            payload["signal_id"] = signal_id
+        if exchange_order_id:
+            payload["exchange_order_id"] = exchange_order_id
+        if notes:
+            payload["notes"] = notes
+
+        resp = self._client.post(f"{self.base_url}/trades/", json=payload)
+        resp.raise_for_status()
+        result = resp.json()
+        logger.info(
+            "交易已记录 | {} {} {} {} @ {}",
+            exchange, symbol, side, quantity, price,
+        )
+        return result
+
+    def query_trades(
+        self,
+        strategy_id: str = None,
+        exchange: str = None,
+        symbol: str = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        """查询交易记录"""
+        payload = {"limit": limit}
+        if strategy_id:
+            payload["strategy_id"] = strategy_id
+        if exchange:
+            payload["exchange"] = exchange
+        if symbol:
+            payload["symbol"] = symbol
+        resp = self._client.post(f"{self.base_url}/trades/query", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_positions(
+        self,
+        strategy_id: str = None,
+        exchange: str = None,
+    ) -> list[dict]:
+        """查询当前持仓"""
+        payload = {}
+        if strategy_id:
+            payload["strategy_id"] = strategy_id
+        if exchange:
+            payload["exchange"] = exchange
+        resp = self._client.post(f"{self.base_url}/trades/positions/query", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_pnl(self, strategy_id: str) -> dict:
+        """获取策略 PnL 汇总"""
+        resp = self._client.get(f"{self.base_url}/trades/pnl/{strategy_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+    def print_pnl(self, strategy_id: str) -> None:
+        """格式化打印策略 PnL"""
+        pnl = self.get_pnl(strategy_id)
+        print("\n" + "=" * 50)
+        print("  策略 PnL 汇总")
+        print("=" * 50)
+        print(f"  策略 ID:       {pnl.get('strategy_id', '')}")
+        print(f"  总交易数:      {pnl.get('total_trades', 0):>10d}")
+        print(f"  总买入金额:    {pnl.get('total_buy_value', 0):>14.2f}")
+        print(f"  总卖出金额:    {pnl.get('total_sell_value', 0):>14.2f}")
+        print(f"  累计手续费:    {pnl.get('total_fee', 0):>14.2f}")
+        print(f"  已实现盈亏:    {pnl.get('realized_pnl', 0):>+14.2f}")
+        print("=" * 50)
+
+    def print_positions(self, strategy_id: str = None, exchange: str = None) -> None:
+        """格式化打印当前持仓"""
+        positions = self.get_positions(strategy_id=strategy_id, exchange=exchange)
+        if not positions:
+            print("当前无持仓")
+            return
+
+        print(f"\n当前持仓（共 {len(positions)} 个）")
+        print("-" * 85)
+        print(f"{'交易所':<14} {'交易对':<12} {'方向':<8} {'数量':>12} {'均价':>12} {'已实现PnL':>14}")
+        print("-" * 85)
+        for p in positions:
+            print(
+                f"{p.get('exchange', ''):<14} "
+                f"{p.get('symbol', ''):<12} "
+                f"{p.get('side', ''):<8} "
+                f"{p.get('quantity', 0):>12.4f} "
+                f"{p.get('avg_entry_price', 0):>12.2f} "
+                f"{p.get('realized_pnl', 0):>+14.2f}"
+            )
+        print("-" * 85)
+
     # ═══════════════ 展示工具 ═══════════════
 
     @staticmethod
