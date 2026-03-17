@@ -1,100 +1,200 @@
 ---
 name: dex-quant-skill
 description: >
-  AI quantitative trading platform with 5 specialized sub-skills. Covers the full workflow from natural language
-  strategy design, backtesting, review/approval, real-time signal monitoring, to risk-controlled execution.
-  Use when user asks to: design trading strategies, create quant strategies, backtest, analyze backtest results,
-  monitor signals, execute trades, manage trading risk, optimize strategy parameters, or anything related to
-  quantitative trading for crypto perpetuals, spot, stocks, metals, and commodities.
-  AI 量化交易平台，5 个子 Skill 覆盖策略设计→回测→评审→信号监控→执行的完整链路。
+  加密货币量化交易 AI Skill 技能包。
+  用户用自然语言描述交易规则 → AI 生成可运行的策略脚本 → 回测验证 → 实时监控执行。
+  支持技术指标、社交媒体、链上数据等多种信号源。
 ---
 
-# DEX Quant Skill — AI 量化 Agent 编排器
+# DEX Quant Skill — 加密货币量化交易技能包
 
-本 Skill 是 5 个量化子 Skill 的统一入口。根据用户意图自动路由到正确的子 Skill。
+## 一句话说明
 
-## 子 Skill 路由表
+用户用自然语言说 **"MACD 金叉就买 BTC"** 或 **"Elon Musk 发推提到 Doge 就买"**，
+AI 自动生成可运行的策略脚本，支持回测验证和实时交易。
 
-| 用户意图 | 路由到 | 子 Skill 路径 |
-|---------|--------|--------------|
-| 设计策略、描述交易想法、修改策略 | **strategy-designer** | [strategy-designer/SKILL.md](strategy-designer/SKILL.md) |
-| 生成回测代码、跑回测、实现策略 | **backtest-coder** | [backtest-coder/SKILL.md](backtest-coder/SKILL.md) |
-| 评审回测、分析结果、是否上线 | **backtest-reviewer** | [backtest-reviewer/SKILL.md](backtest-reviewer/SKILL.md) |
-| 部署监控、实时信号、设置告警 | **signal-runtime-builder** | [signal-runtime-builder/SKILL.md](signal-runtime-builder/SKILL.md) |
-| 执行交易、风控检查、下单、kill switch | **execution-guard** | [execution-guard/SKILL.md](execution-guard/SKILL.md) |
+---
 
-## 工作流程
+## 3 个 Skill
 
 ```
-用户自然语言
-    │
-    ▼ 路由判断
-    │
-    ├─ "帮我设计一个 BTC 策略"     → 读取 strategy-designer/SKILL.md
-    ├─ "生成回测代码，跑一下"       → 读取 backtest-coder/SKILL.md
-    ├─ "回测结果怎么样？能上线吗"   → 读取 backtest-reviewer/SKILL.md
-    ├─ "部署信号监控"               → 读取 signal-runtime-builder/SKILL.md
-    └─ "执行这个信号 / 检查风控"    → 读取 execution-guard/SKILL.md
+ ┌─────────────────┐     ┌─────────────┐     ┌──────────────────┐
+ │  策略制作         │     │  回测        │     │  监控执行          │
+ │  strategy-maker  │────▶│  backtester  │────▶│  monitor-executor │
+ │                  │     │              │     │                   │
+ │  用户说想法       │     │  跑历史数据   │     │  跑脚本+出信号     │
+ │  → AI 生成脚本   │     │  → 看能不能赚 │     │  → 风控检查        │
+ │  (.py / .ts)    │     │  → 给评价     │     │  → 执行/拦截       │
+ └─────────────────┘     └─────────────┘     └──────────────────┘
 ```
 
-## 使用指南
+| Skill | 职责 | 输入 | 输出 |
+|-------|------|------|------|
+| **strategy-maker** | 把自然语言变成可运行脚本 | 用户想法 | `.py` / `.ts` 策略脚本 |
+| **backtester** | 调 Server 回测验证策略 | 策略脚本 → 信号 → Server | 绩效报告 + 上线建议 |
+| **monitor-executor** | 实时运行脚本 + 执行交易 | 策略脚本 + 运行模式 | 买/卖信号 + 交易记录 |
 
-1. **识别用户意图** — 判断属于策略设计/回测/评审/监控/执行哪个阶段
-2. **读取对应子 Skill** — 按路由表读取对应的 SKILL.md，严格遵循其工作流程
-3. **读取 shared schemas** — 需要 StrategySpec 格式时读取 [shared/schemas/strategy_spec.json](shared/schemas/strategy_spec.json)
-4. **遵守生命周期** — 策略状态必须按 [shared/schemas/lifecycle.md](shared/schemas/lifecycle.md) 定义的顺序推进
-5. **不越权** — 每个子 Skill 有明确的"禁止事项"，不可跨越
+---
 
-## 核心对象
+## 策略 = 脚本
 
-所有子 Skill 围绕同一份 **StrategySpec** 工作（[schema](shared/schemas/strategy_spec.json)）。
+在这个系统里，**策略就是一个可运行的脚本**。脚本负责：
 
-全部数据对象定义见 [shared/schemas/data_objects.md](shared/schemas/data_objects.md)：
-- StrategySpec — 策略定义（单一真相源）
-- BacktestConfig — 回测配置
-- ReviewReport — 评审报告
-- SignalEvent — 信号事件
-- ExecutionDecision — 执行决策
+1. **获取数据**（K 线、推特、新闻、链上数据...）
+2. **评估条件**（MACD 金叉？RSI 超卖？KOL 发推了？）
+3. **输出信号**（某个币该买还是该卖）
 
-## 生命周期约束
+脚本可以用 **Python** 或 **TypeScript** 编写。
+
+### 信号输出格式
+
+所有策略脚本输出统一的 JSON 格式：
+
+```json
+{
+  "strategy_name": "BTC MACD 趋势跟踪",
+  "signals": [
+    {
+      "symbol": "BTCUSDT",
+      "action": "buy",
+      "confidence": 0.85,
+      "reason": "MACD 金叉 + 成交量放大",
+      "source_type": "technical"
+    }
+  ]
+}
+```
+
+详细格式定义见 `shared/schemas/signal_format.json`。
+
+---
+
+## 条件规则类型
+
+策略可以使用以下任意类型的条件，也可以组合使用：
+
+| 类型 | 示例 | 数据来源 |
+|------|------|---------|
+| **技术指标** | MACD 金叉、RSI 超卖、均线交叉 | K 线 OHLCV |
+| **社媒信号** | KOL 发推、新闻情绪、Reddit 热度 | Twitter API / 新闻 API |
+| **链上数据** | 资金费率过高、鲸鱼转账、Gas 异常 | Binance API / 区块链浏览器 |
+| **大盘联动** | BTC 涨了山寨跟、纳指暴跌币圈跌 | 交易所 / yfinance |
+| **时间条件** | 每 4h 检查一次、每天 UTC 8 点 | 定时触发 |
+
+---
+
+## 执行模式
+
+策略脚本可以在两种环境下运行：
+
+| 模式 | 说明 | 适合场景 |
+|------|------|---------|
+| **本地运行** | 脚本在用户自己的电脑上跑 | 开发调试、隐私敏感、免费使用 |
+| **服务器运行** | 脚本上传到服务器通过 API 执行 | 7×24 运行、不占本地资源 |
+
+---
+
+## 快速开始
+
+### 场景 1：从零创建技术指标策略
 
 ```
-draft → spec_ready → backtest_ready → backtest_done
-    → review_passed / review_rejected
-    → runtime_ready → monitoring_live → execution_enabled
-    → paper_trading / live_trading → paused / retired
+用户: "帮我做一个 BTC 的策略，MACD 金叉就买，死叉就卖，加上成交量确认"
+AI:   → 使用 strategy-maker 生成 btc_macd_strategy.py
+      → 建议用 backtester 跑 2024 年回测验证
+      → 通过后用 monitor-executor 部署实时监控
 ```
 
-**硬性规则：**
-- 未通过 backtest-reviewer → 不得进入 signal-runtime-builder
-- 未开启执行权限 → 不得进入 live_trading
-- 风控异常 → 任何时候可打回 paused
+### 场景 2：社媒 + 技术的混合策略
 
-## 典型对话示例
+```
+用户: "帮我监控推特，如果有大 V 喊单 SOL 并且 RSI 低于 40 就买"
+AI:   → 使用 strategy-maker 生成混合策略脚本
+      → 技术指标部分可回测，社媒部分标注为"实时验证"
+      → 部署后同时监控推特和价格
+```
 
-**用户**：我想做一个 ETH 4h 趋势策略
-→ 路由到 strategy-designer，追问入场出场条件、止损止盈、杠杆
+### 场景 3：回测已有策略
 
-**用户**：用这个策略跑 2022-2025 回测
-→ 路由到 backtest-coder，生成代码并执行回测
+```
+用户: "把我这个策略跑一下 2024 年全年的 ETH 数据"
+AI:   → 本地运行脚本产出信号
+      → 调 dex-quant-server API 发送信号
+      → Server 拉 K 线（带缓存）+ 回测引擎模拟
+      → 返回绩效报告 + 结论（通过/先模拟/驳回）
+```
 
-**用户**：表现怎么样？能上线吗？
-→ 路由到 backtest-reviewer，8 步评审流程
+---
 
-**用户**：通过了，先部署监控
-→ 路由到 signal-runtime-builder，生成信号服务
+## 项目结构
 
-**用户**：这个信号可以执行吗？
-→ 路由到 execution-guard，10 项风控检查
+```
+dex-skill/
+├── SKILL.md                          ← 你在这里
+├── strategy-maker/                   ← Skill 1: 策略制作
+│   ├── SKILL.md
+│   ├── assets/templates/
+│   │   ├── technical_strategy.py     ← 技术指标策略模板
+│   │   ├── social_strategy.py        ← 社媒策略模板
+│   │   └── mixed_strategy.py         ← 混合策略模板
+│   └── references/
+│       ├── conditions-guide.md       ← 条件规则指南
+│       └── examples.md               ← 示例策略
+├── backtester/                       ← Skill 2: 回测（调 dex-quant-server）
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   ├── api_client.py             ← Server API 客户端（核心）
+│   │   ├── data_client.py            ← 本地数据获取（策略脚本生成信号用）
+│   │   ├── backtest_engine.py        ← 本地回测引擎（备用）
+│   │   ├── indicators.py             ← 技术指标库（12 种指标）
+│   │   └── optimizer.py              ← 参数优化器
+│   ├── assets/
+│   │   └── review_template.json      ← 评审模板
+│   └── references/
+│       ├── data-sources.md
+│       ├── engine-spec.md
+│       ├── cost-models.md
+│       ├── metrics-guide.md
+│       └── review-checklist.md
+├── monitor-executor/                 ← Skill 3: 监控执行
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   ├── risk_checker.py           ← 11 项风控检查 + Kill Switch
+│   │   └── signal_runtime.py         ← 信号运行时引擎
+│   └── references/
+│       ├── risk-rules.md
+│       ├── deployment-guide.md
+│       ├── runtime-spec.md
+│       └── state-machine.md
+└── shared/
+    └── schemas/
+        ├── signal_format.json        ← 信号标准输出格式
+        ├── strategy_spec.json        ← 策略元数据（保留）
+        ├── data_objects.md
+        └── lifecycle.md
+```
 
-## 支持的资产
+---
 
-| 类型 | 数据源 | 示例 |
-|------|--------|------|
-| 加密永续合约 | Binance Futures | BTCUSDT, ETHUSDT |
-| 加密现货 | Binance Spot | BTC/USDT |
-| 代币价格 | CoinGecko | SOL, AVAX |
-| 美股/RWA | Yahoo Finance | AAPL, TSLA |
-| 贵金属 | Yahoo Finance | GC=F (黄金), SI=F (白银) |
-| 大宗商品 | Yahoo Finance | CL=F (原油) |
-| DeFi 协议 | DeFi Llama | Uniswap, Aave |
+## 安装
+
+```bash
+# 克隆到本地
+git clone <repo-url> dex-skill
+
+# 安装 Python 依赖
+pip install -r requirements.txt
+
+# 安装到 Cursor/Codex
+bash install.sh
+```
+
+## 依赖
+
+```
+httpx>=0.27
+numpy>=1.24
+pandas>=2.0
+loguru>=0.7
+yfinance>=0.2
+```

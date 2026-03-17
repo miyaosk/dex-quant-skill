@@ -4,6 +4,7 @@
 
 - [Binance Futures（永续合约）](#binance-futures永续合约)
 - [Binance Spot（现货）](#binance-spot现货)
+- [Hyperliquid（永续合约）](#hyperliquid永续合约)
 - [CoinGecko（代币价格）](#coingecko代币价格)
 - [Yahoo Finance（美股/大宗商品/贵金属）](#yahoo-finance美股大宗商品贵金属)
 - [DeFi Llama（协议 TVL/手续费）](#defi-llama协议-tvl手续费)
@@ -139,6 +140,97 @@ Base URL: `https://api.binance.com`
 
 ---
 
+## Hyperliquid（永续合约）
+
+Base URL: `https://api.hyperliquid.xyz`
+
+**全部为公开端点，无需 API Key。所有请求使用 POST `/info`。**
+
+### POST /info — K 线 (candleSnapshot)
+
+**请求体**:
+```json
+{
+  "type": "candleSnapshot",
+  "req": {
+    "coin": "BTC",
+    "interval": "1h",
+    "startTime": 1700000000000,
+    "endTime": 1710000000000
+  }
+}
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| coin | string | 是 | 资产名称，如 `BTC`、`ETH`、`SOL`（不含 USDT） |
+| interval | string | 是 | `1m / 3m / 5m / 15m / 30m / 1h / 2h / 4h / 8h / 12h / 1d / 3d / 1w / 1M` |
+| startTime | long | 是 | 毫秒时间戳（含） |
+| endTime | long | 否 | 毫秒时间戳（含），默认当前时间 |
+
+**返回格式**（数组，每条）:
+```json
+{
+  "t": 1700000000000,
+  "T": 1700003600000,
+  "s": "BTC",
+  "i": "1h",
+  "o": "43250.5",
+  "c": "43300.0",
+  "h": "43350.0",
+  "l": "43200.0",
+  "v": "1234.56",
+  "n": 5678
+}
+```
+
+| 属性 | 值 |
+|------|-----|
+| 历史深度 | 最近 **5000 根**（单次），自动分页可拉更多 |
+| 分页方式 | 设置 `startTime = 上一批最后一条的 T + 1` |
+| coin 格式 | 只需资产名（`BTC`），不需要 `USDT` 后缀 |
+
+### POST /info — 资金费率 (fundingHistory)
+
+**请求体**:
+```json
+{
+  "type": "fundingHistory",
+  "coin": "BTC",
+  "startTime": 1700000000000,
+  "endTime": 1710000000000
+}
+```
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| coin | string | 是 | 资产名称 |
+| startTime | long | 是 | 毫秒时间戳 |
+| endTime | long | 否 | 默认当前时间 |
+
+**返回格式**:
+```json
+{
+  "time": 1700000000000,
+  "coin": "BTC",
+  "fundingRate": "0.00010000",
+  "premium": "0.00005000"
+}
+```
+
+| 属性 | 值 |
+|------|-----|
+| 频率 | 每 8 小时一条 |
+| 历史深度 | 合约上线以来全部 |
+
+### POST /info — 合约列表 (meta)
+
+**请求体**: `{"type": "meta"}`
+
+返回 `universe` 数组，包含所有可交易的永续合约信息（name, szDecimals 等）。
+
+---
+
 ## CoinGecko（代币价格）
 
 Base URL: `https://api.coingecko.com/api/v3`
@@ -247,6 +339,7 @@ Base URL: `https://api.llama.fi`
 | Binance Futures 资金费率 | 500 次/5 分钟（共享） | 大量拉取时控速 |
 | Binance Futures 数据统计 | 1000 次/5 分钟 | `openInterestHist` / `longShortRatio` |
 | Binance Spot | 6000 次/分钟 | 宽松 |
+| Hyperliquid | 无硬限制 | 建议分页间隔 200ms，单次最多 5000 根 |
 | CoinGecko 免费 | 10-30 次/分钟 | **严格**，建议加缓存 |
 | yfinance | 无硬限制 | Yahoo 可能临时封 IP，建议加间隔 |
 | DeFi Llama 免费 | 无硬限制 | 偶尔慢，建议缓存 |
@@ -255,6 +348,7 @@ Base URL: `https://api.llama.fi`
 
 - **Binance K 线**: 单次最多 1500 条。`data_client.py` 已实现自动分页，设置 `startTime = 上一批 open_time + 1`。
 - **Binance 资金费率**: 单次最多 1000 条。自动分页，设置 `startTime = 上一批 fundingTime + 1`。
+- **Hyperliquid K 线**: 单次最多 5000 根。自动分页，设置 `startTime = 上一批 T + 1`。
 - **其他端点**: 无需分页或仅返回快照。
 
 ---

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/miyaosk/dex-quant-skill.git"
-SKILLS=(strategy-designer backtest-coder backtest-reviewer signal-runtime-builder execution-guard)
+SKILLS=(strategy-maker backtester monitor-executor)
 
 # ---------- 检测目标平台 ----------
 detect_platform() {
@@ -74,6 +74,11 @@ fi
 
 echo ""
 
+# ---------- 安装 Python 依赖 ----------
+echo "→ 安装 Python 依赖..."
+pip3 install --quiet httpx loguru numpy pandas yfinance 2>/dev/null || true
+echo ""
+
 # ---------- 创建 symlinks ----------
 for skill in "${SKILLS[@]}"; do
     target="$INSTALL_DIR/$skill"
@@ -110,17 +115,19 @@ for skill in "${SKILLS[@]}"; do
     echo "  · $skill"
 done
 echo ""
+echo "服务器地址: https://quant.qa1.dex.hashkeydev.com"
+echo ""
 
 if [ "$PLATFORM" = "codex" ]; then
     echo "请重启 Codex 以加载新 Skills。"
 elif [ "$PLATFORM" = "cursor" ]; then
     echo "请重启 Cursor 以加载新 Skills。"
-    echo ""
-    echo "在对话中使用:"
-    echo "  · 直接描述策略需求，Agent 会自动调用 strategy-designer"
-    echo "  · 说"生成回测代码"，Agent 会调用 backtest-coder"
-    echo "  · 说"评审一下回测结果"，Agent 会调用 backtest-reviewer"
-    echo "  · 说"部署信号监控"，Agent 会调用 signal-runtime-builder"
-    echo "  · 说"执行这个信号"，Agent 会调用 execution-guard"
 fi
+
+echo ""
+echo "测试方法:"
+echo "  1. 对 AI 说: \"帮我做一个 BTC 的 MACD 金叉死叉策略\""
+echo "  2. AI 会自动生成策略脚本"
+echo "  3. 说 \"帮我回测下 2025 年 1-3 月\""
+echo "  4. AI 会运行脚本生成信号，发到服务器回测"
 echo ""

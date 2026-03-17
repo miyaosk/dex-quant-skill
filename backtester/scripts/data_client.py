@@ -230,9 +230,9 @@ class DataClient:
         Binance 端点: GET /futures/data/openInterestHist
         ⚠️ 限制: 仅最近 30 天数据。
         """
-        pair = _symbol_to_binance(symbol).replace("USDT", "")
+        bn_symbol = _symbol_to_binance(symbol)
         data = self._get(f"{BINANCE_FUTURES_BASE}/futures/data/openInterestHist", {
-            "pair": pair,
+            "pair": bn_symbol,
             "contractType": "PERPETUAL",
             "period": period,
             "limit": limit,
@@ -581,14 +581,14 @@ class DataClient:
         """
         协议 TVL 历史。
 
-        DeFi Llama 端点: GET /api/protocol/{slug}
+        DeFi Llama 端点: GET /protocol/{slug}
         免费，无需 Key。
         支持: aave, compound-v3, lido, curve-dex, uniswap 等
 
         返回:
             DataFrame [datetime, tvl_usd]
         """
-        data = self._get(f"{DEFILLAMA_BASE}/api/protocol/{protocol}")
+        data = self._get(f"{DEFILLAMA_BASE}/protocol/{protocol}")
         tvl_history = data.get("tvl", [])
 
         if not tvl_history:
@@ -603,9 +603,9 @@ class DataClient:
         """
         协议当前信息（TVL、类别、链等）。
 
-        DeFi Llama 端点: GET /api/protocol/{slug}
+        DeFi Llama 端点: GET /protocol/{slug}
         """
-        data = self._get(f"{DEFILLAMA_BASE}/api/protocol/{protocol}")
+        data = self._get(f"{DEFILLAMA_BASE}/protocol/{protocol}")
         return {
             "name": data.get("name", ""),
             "category": data.get("category", ""),
@@ -619,13 +619,13 @@ class DataClient:
         """
         协议手续费/收入数据。
 
-        DeFi Llama 端点: GET /api/overview/fees
+        DeFi Llama 端点: GET /overview/fees
         免费，返回所有协议的 24h 手续费和收入。
 
         返回:
             DataFrame [name, category, fees_24h, fees_7d, fees_30d, revenue_24h]
         """
-        data = self._get(f"{DEFILLAMA_BASE}/api/overview/fees")
+        data = self._get(f"{DEFILLAMA_BASE}/overview/fees")
         protocols = data.get("protocols", [])
 
         if protocol:
@@ -654,12 +654,12 @@ class DataClient:
         """
         所有 DeFi 协议列表及 TVL。
 
-        DeFi Llama 端点: GET /api/protocols
+        DeFi Llama 端点: GET /protocols
 
         返回:
             DataFrame [name, slug, category, chains, tvl] (前 200 个)
         """
-        data = self._get(f"{DEFILLAMA_BASE}/api/protocols")
+        data = self._get(f"{DEFILLAMA_BASE}/protocols")
         rows = []
         for p in data[:200]:
             rows.append({
