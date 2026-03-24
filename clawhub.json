@@ -1,25 +1,32 @@
 {
   "name": "dex-quant-skill",
-  "version": "2.0.0",
-  "tagline": "5-skill AI quant platform: strategy design → backtest → review → signal → execution",
-  "description": "AI 量化 Agent 平台。5 个独立 Skill 覆盖从自然语言策略设计、回测实现、回测评审、实时信号监控到风控执行的完整链路。围绕统一的 StrategySpec 对象工作，研究与实盘完全分离。",
-  "category": "finance",
+  "tagline": "自然语言 → 量化策略脚本 → 回测验证 → 实时交易",
+  "description": "加密货币量化交易 AI Skill 技能包。用户用自然语言描述交易规则，AI 自动生成可运行的策略脚本（Python），支持技术指标（MACD/RSI/布林带/KDJ 等）、社交媒体、链上数据等多种信号源。内置回测引擎验证策略历史表现，通过后可部署实时监控执行。",
+  "version": "1.9.3",
+  "author": "miyaosk",
+  "license": "MIT",
+  "category": "data",
   "tags": [
     "crypto",
-    "quantitative-trading",
-    "backtesting",
-    "perpetual-futures",
-    "strategy-design",
-    "signal-monitoring",
-    "risk-management",
+    "quant",
+    "trading",
+    "backtest",
+    "strategy",
     "binance",
     "defi"
   ],
-  "license": "MIT",
-  "author": "HashKey AI",
   "repository": "https://github.com/miyaosk/dex-quant-skill",
-  "requires": {
-    "bins": ["python3"],
-    "packages": ["httpx", "loguru", "numpy", "pandas", "yfinance"]
-  }
+  "support": {
+    "issues": "https://github.com/miyaosk/dex-quant-skill/issues"
+  },
+  "permissions": [
+    "network",
+    "filesystem",
+    "shell"
+  ],
+  "skills": [
+    "strategy-maker",
+    "backtester",
+    "monitor-executor"
+  ]
 }

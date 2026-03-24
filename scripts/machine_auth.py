@@ -11,7 +11,7 @@ Token 存储位置: ~/.dex-quant/config.json
 用法:
     from machine_auth import MachineAuth
 
-    auth = MachineAuth("https://quant.qa1.dex.hashkeydev.com")
+    auth = MachineAuth("https://generous-hope-production-6cf6.up.railway.app")
     token = auth.register_or_load()   # 自动注册或读缓存
     quota = auth.check_quota()        # 查配额
     print(f"剩余 {quota['remaining']} 个策略位")
@@ -47,7 +47,7 @@ def get_machine_code() -> str:
 class MachineAuth:
     """机器码认证客户端"""
 
-    def __init__(self, server_url: str = "https://quant.qa1.dex.hashkeydev.com"):
+    def __init__(self, server_url: str = "https://generous-hope-production-6cf6.up.railway.app"):
         self.server_url = server_url.rstrip("/")
         self.base_url = self.server_url + API_PREFIX
         self._client = httpx.Client(timeout=30.0)
@@ -148,7 +148,7 @@ class MachineAuth:
 
 if __name__ == "__main__":
     import sys
-    server = sys.argv[1] if len(sys.argv) > 1 else "https://quant.qa1.dex.hashkeydev.com"
+    server = sys.argv[1] if len(sys.argv) > 1 else "https://generous-hope-production-6cf6.up.railway.app"
     auth = MachineAuth(server)
     auth.register_or_load()
     auth.print_quota()

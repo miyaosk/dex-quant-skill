@@ -339,7 +339,7 @@ def run(
     symbol: str,
     timeframe: str,
     script_path: str = None,
-    server_url: str = "https://quant.qa1.dex.hashkeydev.com",
+    server_url: str = "https://generous-hope-production-6cf6.up.railway.app",
 ):
     """
     策略脚本的统一入口。
