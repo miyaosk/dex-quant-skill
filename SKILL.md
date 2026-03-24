@@ -113,10 +113,20 @@ client.print_metrics(bt)
 - "批量回测"、"批量生成策略"
 - "随机生成N个策略然后回测"
 - "对比不同参数"、"跑一批"
+- "用遗传算法优化"
 
 核心思路：生成一个**带 PARAMS 的策略脚本模板**，把差异点做成参数。服务器自动遍历所有参数组合并排名。
 
 **不要**循环调用 `run_server_backtest` 50 次。**只调一次 `run_optimization`**。
+
+### 搜索方法（method 参数）
+
+| method | 说明 | 适用场景 |
+|--------|------|---------|
+| `"grid"` | 网格搜索，穷举所有参数组合 | 参数少、组合数 ≤ 200 |
+| `"genetic"` | 遗传算法（锦标赛选择 + 交叉 + 变异 + 精英保留 + 早停） | 参数多、搜索空间大（组合数 > 200） |
+
+默认 `method="grid"`。当用户提到"遗传算法"、"智能搜索"、"大范围寻优"，或参数组合超过 200 时，用 `method="genetic"`。
 
 ### 步骤一：生成带 PARAMS 的策略脚本
 
@@ -160,6 +170,7 @@ result = client.run_optimization(
     leverage=3,
     fitness_metric="sharpe_ratio",
     max_combinations=200,
+    method="grid",  # 或 "genetic"（遗传算法）
 )
 
 client.print_optimization(result)
@@ -168,7 +179,8 @@ client.print_optimization(result)
 服务器会自动替换 PARAMS、逐一回测所有参数组合，返回按 fitness 降序排名的 Top 结果。
 
 ### 注意
-- 控制参数组合数在 200 以内（step 不要太小）
+- `method="grid"`: 控制参数组合数在 200 以内（step 不要太小）
+- `method="genetic"`: 搜索空间大时使用，无需严格控制组合数，算法自动收敛
 - fitness_metric 支持：sharpe_ratio、total_return_pct、sortino_ratio、win_rate
 - 结果展示必须用 `print_optimization()`，展示完整排名表
 

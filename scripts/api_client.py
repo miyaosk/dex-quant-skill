@@ -378,6 +378,7 @@ class QuantAPIClient:
                 {"name": "fast_ema", "type": "int", "low": 5, "high": 30, "step": 5}
                 {"name": "sl_pct", "type": "float", "low": 0.01, "high": 0.10, "step": 0.01}
                 {"name": "direction", "type": "choice", "choices": ["long", "short"]}
+            method: "grid"(网格穷举) 或 "genetic"(遗传算法，适合大搜索空间)
             fitness_metric: 优化目标 (sharpe_ratio / total_return_pct / sortino_ratio / win_rate)
             poll_interval: 轮询间隔秒数（默认10秒）
 
