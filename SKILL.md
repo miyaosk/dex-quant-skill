@@ -51,6 +51,22 @@ description: >
 - 实现 `generate_signals(mode, start_date, end_date)` 函数
 - 返回 `{"strategy_name": "...", "signals": [...]}`
 
+**DataClient 核心方法**（必须用这些名字，不要自己编）：
+```python
+dc = DataClient()
+df = dc.get_perp_klines("BTCUSDT", "4h", start_date, end_date)  # 永续合约K线
+df = dc.get_spot_klines("BTCUSDT", "1h", start_date, end_date)  # 现货K线
+# 返回 DataFrame: datetime, open, high, low, close, volume
+```
+
+**Indicators 常用方法**：
+```python
+ind.ema(series, period)    ind.sma(series, period)
+ind.rsi(series, period)    ind.macd(series, fast, slow, signal)
+ind.bollinger(series, period, std)  ind.atr(high, low, close, period)
+ind.kdj(high, low, close, k, d, j) ind.crossover(a, b)
+```
+
 信号格式：`timestamp, symbol, action(buy/sell), direction(long/short), confidence, reason, price_at_signal`。可选：`suggested_stop_loss, suggested_take_profit`。
 
 ---
