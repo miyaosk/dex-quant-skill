@@ -378,7 +378,13 @@ class QuantAPIClient:
                 {"name": "fast_ema", "type": "int", "low": 5, "high": 30, "step": 5}
                 {"name": "sl_pct", "type": "float", "low": 0.01, "high": 0.10, "step": 0.01}
                 {"name": "direction", "type": "choice", "choices": ["long", "short"]}
-            method: "grid"(网格穷举) 或 "genetic"(遗传算法，适合大搜索空间)
+            method: 搜索算法
+                "grid"      — 网格穷举（组合数 ≤ 200）
+                "genetic"   — 遗传算法（推荐，大空间通用）
+                "bayesian"  — 贝叶斯 TPE（少量评估快速收敛）
+                "random"    — 随机采样
+                "annealing" — 模拟退火
+                "pso"       — 粒子群优化
             fitness_metric: 优化目标 (sharpe_ratio / total_return_pct / sortino_ratio / win_rate)
             poll_interval: 轮询间隔秒数（默认10秒）
 

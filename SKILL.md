@@ -123,10 +123,18 @@ client.print_metrics(bt)
 
 | method | 说明 | 适用场景 |
 |--------|------|---------|
-| `"grid"` | 网格搜索，穷举所有参数组合 | 参数少、组合数 ≤ 200 |
-| `"genetic"` | 遗传算法（锦标赛选择 + 交叉 + 变异 + 精英保留 + 早停） | 参数多、搜索空间大（组合数 > 200） |
+| `"grid"` | 网格穷举 | 参数少、组合数 ≤ 200 |
+| `"genetic"` | 遗传算法（交叉+变异+精英保留+早停）⭐ | 大空间首选，智能搜索 |
+| `"bayesian"` | 贝叶斯优化 (TPE)⭐ | 回测耗时长，少量评估快速收敛 |
+| `"random"` | 随机采样 | 高维空间快速探索 |
+| `"annealing"` | 模拟退火 | 参数空间多峰，跳出局部最优 |
+| `"pso"` | 粒子群优化 | 连续参数为主，群体协作 |
 
-默认 `method="grid"`。当用户提到"遗传算法"、"智能搜索"、"大范围寻优"，或参数组合超过 200 时，用 `method="genetic"`。
+**推荐策略**：
+- 默认或用户无偏好 → `"genetic"`（通用性最好）
+- 用户强调"快速"、"少跑几次就出结果" → `"bayesian"`
+- 参数少且用户想穷举 → `"grid"`
+- 用户明确说"遗传算法/贝叶斯/模拟退火/粒子群/随机" → 对应 method
 
 ### 步骤一：生成带 PARAMS 的策略脚本
 
@@ -170,7 +178,7 @@ result = client.run_optimization(
     leverage=3,
     fitness_metric="sharpe_ratio",
     max_combinations=200,
-    method="grid",  # 或 "genetic"（遗传算法）
+    method="genetic",  # grid / genetic / bayesian / random / annealing / pso
 )
 
 client.print_optimization(result)
@@ -180,7 +188,7 @@ client.print_optimization(result)
 
 ### 注意
 - `method="grid"`: 控制参数组合数在 200 以内（step 不要太小）
-- `method="genetic"`: 搜索空间大时使用，无需严格控制组合数，算法自动收敛
+- 其他方法: 无需严格控制组合数，算法自动收敛，`max_combinations` 控制最大评估次数
 - fitness_metric 支持：sharpe_ratio、total_return_pct、sortino_ratio、win_rate
 - 结果展示必须用 `print_optimization()`，展示完整排名表
 
