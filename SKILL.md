@@ -69,6 +69,8 @@ ind.kdj(high, low, close, k, d, j) ind.crossover(a, b)
 
 信号格式：`timestamp, symbol, action(buy/sell), direction(long/short), confidence, reason, price_at_signal`。可选：`suggested_stop_loss, suggested_take_profit`。
 
+**⚠️ timestamp 必须是 K 线的 datetime 值**：用 `str(df.iloc[i]["datetime"])`，不要用行号 `i` 或 `df.index[i]`。
+
 ---
 
 ## 2. 回测（服务器端执行，免费无限次，不占配额）
