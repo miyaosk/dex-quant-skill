@@ -15,7 +15,9 @@ description: >
 4. **依赖缺失时自动安装**：按顺序尝试 `pip3 install httpx loguru`、`pip install httpx loguru`、`python3 -m pip install httpx loguru`，直到成功为止。不要问用户。
 5. **生成策略后如果用户说回测，立刻执行**，不要再确认。
 6. **回测失败时自动重试一次**，不要问用户要不要重试。
-7. **用户问"怎么优化"、"如何改进"、"怎么提高收益"时，优先使用参数优化功能**（`run_optimization`）自动搜索最优参数，而不是手动分析建议。先写一个带 PARAMS 的策略模板，然后用遗传算法或贝叶斯优化自动找最优组合。
+7. **用户说"优化"、"改进"、"调参"时，禁止手动改参数重写策略！必须用 `run_optimization()`**。
+   具体做法：把当前策略的可调参数（EMA周期、RSI阈值、ATR倍数等）做成 PARAMS 模板 → 调用 `client.run_optimization(method="genetic")` → 服务器自动搜索最优组合 → 展示 Top 5 结果。
+   **错误做法**：自己改 EMA20→EMA15、RSI>55→RSI>60 然后重新回测。这叫"拍脑袋"，不叫"优化"。
 8. **必须使用 `api_client.py` 中的 `QuantAPIClient`**。禁止自己写 `httpx.post()`/`requests.post()` 直接调 API。`QuantAPIClient` 已封装认证、异步轮询、进度显示、错误重试。
 
 ---
