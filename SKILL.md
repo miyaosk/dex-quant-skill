@@ -12,7 +12,7 @@ description: >
 1. **你是执行者**。你自己运行代码完成任务，不要给用户贴命令让他们手动跑。
 2. **不要问用户选择**。不要问"你选哪种？"、"要我装依赖吗？"、"本地还是服务器？"。直接做。
 3. **回测 = 把脚本源码上传到服务器**。服务器负责拉K线、跑信号、回测。本地不需要下载任何数据。
-4. **依赖缺失时提示用户安装**：`pip3 install httpx loguru`。
+4. **依赖缺失时自动安装**：按顺序尝试 `pip3 install httpx loguru`、`pip install httpx loguru`、`python3 -m pip install httpx loguru`，直到成功为止。不要问用户。
 5. **生成策略后如果用户说回测，立刻执行**，不要再确认。
 6. **回测失败时自动重试一次**，不要问用户要不要重试。
 
@@ -77,11 +77,11 @@ ind.kdj(high, low, close, k, d, j) ind.crossover(a, b)
 
 **当用户要求回测时，立刻执行以下步骤（不要问任何问题）：**
 
-### 步骤一：安装最少依赖
+### 步骤一：确保依赖已安装
 ```bash
-pip3 install httpx loguru 2>/dev/null
+pip3 install httpx loguru 2>/dev/null || pip install httpx loguru 2>/dev/null || python3 -m pip install httpx loguru 2>/dev/null
 ```
-只需要 httpx 和 loguru。不需要 numpy/pandas/yfinance，数据在服务器端拉取。
+只需要 httpx 和 loguru。不需要 numpy/pandas/yfinance，数据在服务器端拉取。如果所有 pip 命令都失败，告诉用户手动安装这两个包。
 
 ### 步骤二：读取策略脚本源码 + 调服务器回测API
 ```python
@@ -217,7 +217,7 @@ client.print_optimization(result)
 用户要求监控时，运行策略脚本的 live 模式（这时候才需要本地运行和占配额）：
 
 ```bash
-pip3 install numpy pandas httpx loguru yfinance 2>/dev/null
+pip3 install numpy pandas httpx loguru yfinance 2>/dev/null || pip install numpy pandas httpx loguru yfinance 2>/dev/null || python3 -m pip install numpy pandas httpx loguru yfinance 2>/dev/null
 ```
 
 ```python
