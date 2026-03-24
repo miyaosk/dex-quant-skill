@@ -532,35 +532,31 @@ class QuantAPIClient:
         total = result.get("total", result.get("total_combinations", 0))
         completed = result.get("completed", result.get("evaluated", 0))
         failed = result.get("failed", 0)
+        elapsed = result.get("elapsed_ms", 0) / 1000
+        method = result.get("method", "genetic")
+        best = result.get("best_params", result.get("current_best_params", {}))
+        fitness = result.get("best_fitness", result.get("current_best_fitness", 0))
 
-        print("\n" + "=" * 70)
-        print("  参数优化结果")
-        print("=" * 70)
-        print(f"  总组合数:      {total}")
-        print(f"  成功评估:      {completed - failed}")
-        print(f"  失败:          {failed}")
-        print(f"  耗时:          {result.get('elapsed_ms', 0)/1000:.1f}s")
-        print("-" * 70)
-        print(f"  🏆 最优参数:   {result.get('best_params', result.get('current_best_params', {}))}")
-        print(f"  🏆 最优fitness: {result.get('best_fitness', result.get('current_best_fitness', 0)):.6f}")
-        print("=" * 70)
+        print(f"\n{'━' * 50}")
+        print(f"  参数优化  {method} | {completed - failed}/{total} 组 | {elapsed:.0f}s")
+        print(f"{'━' * 50}")
 
         results = result.get("results", [])
-        if results:
-            print(f"\n{'排名':>4}  {'收益率':>8}  {'Sharpe':>7}  {'回撤':>7}  {'胜率':>6}  {'交易':>4}  参数")
-            print("-" * 70)
-            for r in results[:10]:
-                params_str = ", ".join(f"{k}={v}" for k, v in r.get("params", {}).items())
-                print(
-                    f"  #{r.get('rank', 0):<3}"
-                    f"  {r.get('total_return_pct', 0):>+7.2%}"
-                    f"  {r.get('sharpe_ratio', 0):>7.2f}"
-                    f"  {r.get('max_drawdown_pct', 0):>7.2%}"
-                    f"  {r.get('win_rate', 0):>5.1%}"
-                    f"  {r.get('total_trades', 0):>4}"
-                    f"  {params_str}"
-                )
-            print()
+        for r in (results or [{}])[:5]:
+            rank = r.get("rank", 1)
+            medal = "🥇🥈🥉"[rank - 1] if rank <= 3 else f"#{rank}"
+            ret = r.get("total_return_pct", 0)
+            sharpe = r.get("sharpe_ratio", 0)
+            dd = r.get("max_drawdown_pct", 0)
+            wr = r.get("win_rate", 0)
+            trades = r.get("total_trades", 0)
+            params = r.get("params", best)
+
+            print(f"  {medal} {ret:>+.2%}  Sharpe {sharpe:.2f}  回撤 {abs(dd):.2%}  胜率 {wr:.0%}  {trades}笔")
+            params_str = "  ".join(f"{k}={v}" for k, v in params.items())
+            print(f"     {params_str}")
+
+        print(f"{'━' * 50}")
 
     # ═══════════════ 配额 ═══════════════
 
