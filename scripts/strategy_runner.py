@@ -300,10 +300,9 @@ def _run_server_backtest(
             timeframe=timeframe,
         )
         strategy_id = save_result.get("strategy_id", "")
-        print(f"  ✓ 策略已保存到服务器: {strategy_id}")
-        print(f"  正在执行回测...")
+        print(f"  ✓ 策略已保存到服务器: {strategy_id}", flush=True)
 
-        result = client.run_server_backtest(
+        job_id = client.submit_backtest(
             script_content=script_content,
             strategy_name=strategy_name,
             strategy_id=strategy_id,
@@ -313,6 +312,13 @@ def _run_server_backtest(
             end_date=end_date,
             initial_capital=capital,
             leverage=leverage,
+        )
+        print(f"  回测任务已提交，正在轮询进度: {job_id}", flush=True)
+
+        result = client.wait_backtest(
+            job_id,
+            poll_interval=5.0,
+            max_running_logs=1,
         )
         _show_result(client, result)
         _print_next_steps(result, strategy_name)

@@ -302,7 +302,10 @@ class QuantAPIClient:
         )
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
-        print(f"📋 回测已提交: {job_id} | {strategy_name} ({symbol} {timeframe}, {start_date} → {end_date})")
+        print(
+            f"📋 回测已提交: {job_id} | {strategy_name} ({symbol} {timeframe}, {start_date} → {end_date})",
+            flush=True,
+        )
         return job_id
 
     def check_backtest(self, job_id: str) -> dict:
@@ -324,13 +327,54 @@ class QuantAPIClient:
         elapsed_s = job.get("elapsed_ms", 0) / 1000
 
         if status == "running":
-            print(f"⏳ [{elapsed_s:.0f}s] {stage} ({progress:.0f}%)")
+            print(f"⏳ [{elapsed_s:.0f}s] {stage} ({progress:.0f}%)", flush=True)
         elif status == "completed":
-            print(f"✅ 回测完成（耗时 {elapsed_s:.1f}s）")
+            print(f"✅ 回测完成（耗时 {elapsed_s:.1f}s）", flush=True)
         elif status == "failed":
-            print(f"❌ 回测失败: {job.get('error', '未知错误')}")
+            print(f"❌ 回测失败: {job.get('error', '未知错误')}", flush=True)
 
         return job
+
+    def wait_backtest(
+        self,
+        job_id: str,
+        poll_interval: float = 5.0,
+        max_running_logs: int | None = None,
+    ) -> dict:
+        """
+        轮询等待回测完成。
+
+        参数:
+            job_id: submit_backtest() 返回的任务 ID
+            poll_interval: 轮询间隔秒数
+            max_running_logs: 最多打印多少条 running 进度，None 表示不限制
+        """
+        running_logs = 0
+        last_stage = None
+        last_progress = None
+
+        while True:
+            _time.sleep(poll_interval)
+            job = self.check_backtest(job_id)
+            status = job.get("status")
+
+            if status == "running":
+                running_logs += 1
+                stage = job.get("stage_label")
+                progress = job.get("progress_pct")
+                should_stop_logging = (
+                    max_running_logs is not None and running_logs >= max_running_logs
+                )
+                if should_stop_logging and stage == last_stage and progress == last_progress:
+                    print("⏳ 回测仍在执行中，继续等待...", flush=True)
+                last_stage = stage
+                last_progress = progress
+                if should_stop_logging:
+                    max_running_logs = None
+                continue
+
+            if status in ("completed", "failed"):
+                return job
 
     def run_server_backtest(
         self,
@@ -372,11 +416,7 @@ class QuantAPIClient:
             direction=direction,
         )
 
-        while True:
-            _time.sleep(poll_interval)
-            job = self.check_backtest(job_id)
-            if job.get("status") in ("completed", "failed"):
-                return job
+        return self.wait_backtest(job_id, poll_interval=poll_interval)
 
     # ═══════════════ 参数优化 ═══════════════
 
