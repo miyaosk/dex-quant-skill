@@ -28,7 +28,6 @@ Skill 端调用流程:
 
 from __future__ import annotations
 
-import threading as _threading
 import time as _time
 from typing import Optional
 
@@ -274,13 +273,15 @@ class QuantAPIClient:
         slippage_bps: float = 5.0,
         margin_mode: str = "isolated",
         direction: str = "long_short",
+        poll_interval: float = 5.0,
     ) -> dict:
         """
-        服务器端一站式回测 — 上传脚本，服务器执行+回测。
+        服务器端一站式回测（异步提交 + 轮询进度）。
 
-        与 run_backtest() 的区别:
-        - run_backtest(): 本地跑脚本生成信号，只传信号给服务器
-        - run_server_backtest(): 把脚本源码传给服务器，服务器执行一切
+        流程:
+        1. POST /backtest/submit → 立即返回 job_id
+        2. 每 poll_interval 秒 GET /backtest/job/{job_id} 查进度并打印
+        3. 完成后返回完整回测结果
         """
         payload = {
             "script_content": script_content,
@@ -298,52 +299,45 @@ class QuantAPIClient:
             "direction": direction,
         }
 
-        print(f"⏳ 正在回测 {strategy_name} ({symbol} {timeframe}, {start_date} → {end_date}) ...")
+        print(f"⏳ 正在提交回测 {strategy_name} ({symbol} {timeframe}, {start_date} → {end_date}) ...")
 
-        stop_heartbeat = _threading.Event()
-        def _heartbeat():
-            stages = [
-                (10, "服务器正在拉取K线数据..."),
-                (25, "正在执行策略脚本生成信号..."),
-                (50, "回测引擎模拟交易中..."),
-                (90, "计算绩效指标..."),
-            ]
-            stage_idx = 0
-            start = _time.time()
-            while not stop_heartbeat.is_set():
-                stop_heartbeat.wait(8)
-                if stop_heartbeat.is_set():
-                    break
-                elapsed = _time.time() - start
-                if stage_idx < len(stages) and elapsed >= stages[stage_idx][0]:
-                    print(f"⏳ [{int(elapsed)}s] {stages[stage_idx][1]}")
-                    stage_idx += 1
-                elif elapsed > 120 and int(elapsed) % 30 == 0:
-                    print(f"⏳ [{int(elapsed)}s] 仍在处理，请稍候...")
+        resp = self._client.post(
+            f"{self.base_url}/backtest/submit",
+            json=payload,
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        submit_data = resp.json()
+        job_id = submit_data["job_id"]
+        print(f"📋 任务已提交: {job_id}")
 
-        heartbeat_thread = _threading.Thread(target=_heartbeat, daemon=True)
-        heartbeat_thread.start()
-
-        try:
-            resp = self._client.post(
-                f"{self.base_url}/backtest/run-server",
-                json=payload,
+        last_stage = ""
+        while True:
+            _time.sleep(poll_interval)
+            resp = self._client.get(
+                f"{self.base_url}/backtest/job/{job_id}",
                 headers=self._headers(),
             )
             resp.raise_for_status()
-            result = resp.json()
-        finally:
-            stop_heartbeat.set()
-            heartbeat_thread.join(timeout=2)
+            job = resp.json()
 
-        elapsed_s = result.get("elapsed_ms", 0) / 1000
-        status = result.get("status", "unknown")
-        if status == "completed":
-            print(f"✅ 回测完成（耗时 {elapsed_s:.1f}s）")
-        else:
-            print(f"❌ 回测失败: {result.get('error', '未知错误')}")
+            status = job.get("status", "running")
+            stage_label = job.get("stage_label", "")
+            progress = job.get("progress_pct", 0)
+            elapsed_s = job.get("elapsed_ms", 0) / 1000
 
-        return result
+            if stage_label != last_stage:
+                print(f"⏳ [{elapsed_s:.0f}s] {stage_label} ({progress:.0f}%)")
+                last_stage = stage_label
+
+            if status == "completed":
+                print(f"✅ 回测完成（耗时 {elapsed_s:.1f}s）")
+                return job
+
+            if status == "failed":
+                error = job.get("error", "未知错误")
+                print(f"❌ 回测失败: {error}")
+                return job
 
     # ═══════════════ 参数优化 ═══════════════
 
