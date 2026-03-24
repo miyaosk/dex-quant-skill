@@ -258,14 +258,14 @@ class QuantAPIClient:
 
     # ═══════════════ 服务器端执行回测 ═══════════════
 
-    def run_server_backtest(
+    def submit_backtest(
         self,
         script_content: str,
         strategy_name: str,
-        symbol: str,
-        timeframe: str,
-        start_date: str,
-        end_date: str,
+        symbol: str = "BTCUSDT",
+        timeframe: str = "4h",
+        start_date: str = "",
+        end_date: str = "",
         strategy_id: str = "",
         initial_capital: float = 100_000.0,
         leverage: int = 1,
@@ -273,15 +273,11 @@ class QuantAPIClient:
         slippage_bps: float = 5.0,
         margin_mode: str = "isolated",
         direction: str = "long_short",
-        poll_interval: float = 5.0,
-    ) -> dict:
+    ) -> str:
         """
-        服务器端一站式回测（异步提交 + 轮询进度）。
+        提交回测任务，立即返回 job_id（不等待结果）。
 
-        流程:
-        1. POST /backtest/submit → 立即返回 job_id
-        2. 每 poll_interval 秒 GET /backtest/job/{job_id} 查进度并打印
-        3. 完成后返回完整回测结果
+        用 check_backtest(job_id) 查看进度和获取结果。
         """
         payload = {
             "script_content": script_content,
@@ -299,44 +295,87 @@ class QuantAPIClient:
             "direction": direction,
         }
 
-        print(f"⏳ 正在提交回测 {strategy_name} ({symbol} {timeframe}, {start_date} → {end_date}) ...")
-
         resp = self._client.post(
             f"{self.base_url}/backtest/submit",
             json=payload,
             headers=self._headers(),
         )
         resp.raise_for_status()
-        submit_data = resp.json()
-        job_id = submit_data["job_id"]
-        print(f"📋 任务已提交: {job_id}")
+        job_id = resp.json()["job_id"]
+        print(f"📋 回测已提交: {job_id} | {strategy_name} ({symbol} {timeframe}, {start_date} → {end_date})")
+        return job_id
 
-        last_stage = ""
+    def check_backtest(self, job_id: str) -> dict:
+        """
+        查询回测任务状态。返回 dict，status 为 running/completed/failed。
+
+        completed 时包含完整的 metrics/trades/equity_curve。
+        """
+        resp = self._client.get(
+            f"{self.base_url}/backtest/job/{job_id}",
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        job = resp.json()
+
+        status = job.get("status", "running")
+        stage = job.get("stage_label", "")
+        progress = job.get("progress_pct", 0)
+        elapsed_s = job.get("elapsed_ms", 0) / 1000
+
+        if status == "running":
+            print(f"⏳ [{elapsed_s:.0f}s] {stage} ({progress:.0f}%)")
+        elif status == "completed":
+            print(f"✅ 回测完成（耗时 {elapsed_s:.1f}s）")
+        elif status == "failed":
+            print(f"❌ 回测失败: {job.get('error', '未知错误')}")
+
+        return job
+
+    def run_server_backtest(
+        self,
+        script_content: str,
+        strategy_name: str,
+        symbol: str = "BTCUSDT",
+        timeframe: str = "4h",
+        start_date: str = "",
+        end_date: str = "",
+        strategy_id: str = "",
+        initial_capital: float = 100_000.0,
+        leverage: int = 1,
+        fee_rate: float = 0.0005,
+        slippage_bps: float = 5.0,
+        margin_mode: str = "isolated",
+        direction: str = "long_short",
+        poll_interval: float = 5.0,
+    ) -> dict:
+        """
+        提交 + 轮询一步到位（适合支持流式输出的平台）。
+
+        如果平台不支持流式输出（如 OpenClaw），请改用：
+        1. job_id = client.submit_backtest(...)
+        2. result = client.check_backtest(job_id)
+        """
+        job_id = self.submit_backtest(
+            script_content=script_content,
+            strategy_name=strategy_name,
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start_date,
+            end_date=end_date,
+            strategy_id=strategy_id,
+            initial_capital=initial_capital,
+            leverage=leverage,
+            fee_rate=fee_rate,
+            slippage_bps=slippage_bps,
+            margin_mode=margin_mode,
+            direction=direction,
+        )
+
         while True:
             _time.sleep(poll_interval)
-            resp = self._client.get(
-                f"{self.base_url}/backtest/job/{job_id}",
-                headers=self._headers(),
-            )
-            resp.raise_for_status()
-            job = resp.json()
-
-            status = job.get("status", "running")
-            stage_label = job.get("stage_label", "")
-            progress = job.get("progress_pct", 0)
-            elapsed_s = job.get("elapsed_ms", 0) / 1000
-
-            if stage_label != last_stage:
-                print(f"⏳ [{elapsed_s:.0f}s] {stage_label} ({progress:.0f}%)")
-                last_stage = stage_label
-
-            if status == "completed":
-                print(f"✅ 回测完成（耗时 {elapsed_s:.1f}s）")
-                return job
-
-            if status == "failed":
-                error = job.get("error", "未知错误")
-                print(f"❌ 回测失败: {error}")
+            job = self.check_backtest(job_id)
+            if job.get("status") in ("completed", "failed"):
                 return job
 
     # ═══════════════ 参数优化 ═══════════════

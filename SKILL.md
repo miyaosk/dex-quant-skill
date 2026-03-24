@@ -85,7 +85,9 @@ pip3 install httpx loguru 2>/dev/null || pip install httpx loguru 2>/dev/null ||
 ```
 只需要 httpx 和 loguru。不需要 numpy/pandas/yfinance，数据在服务器端拉取。如果所有 pip 命令都失败，告诉用户手动安装这两个包。
 
-### 步骤二：提交回测任务（第一个代码块）
+### 步骤二：提交回测（⚠️ 必须分两个代码块！）
+
+**第一个代码块 — 提交任务：**
 ```python
 import sys
 sys.path.insert(0, '{baseDir}/scripts')
@@ -95,7 +97,7 @@ with open('{baseDir}/strategies/xxx_strategy.py', 'r') as f:
     script_content = f.read()
 
 client = QuantAPIClient(timeout=300.0)
-bt = client.run_server_backtest(
+job_id = client.submit_backtest(
     script_content=script_content,
     strategy_name="策略名",
     symbol="BTCUSDT",
@@ -106,12 +108,33 @@ bt = client.run_server_backtest(
     initial_capital=100000,
     direction="long_short",
 )
-client.print_metrics(bt)
+print(f"任务ID: {job_id}，等待 15 秒后查询结果...")
 ```
+提交后**立刻告诉用户**任务已提交正在执行。
 
-`run_server_backtest()` 内部会自动：提交任务 → 每 5 秒轮询进度 → 打印阶段（脚本执行/拉K线/模拟交易/计算指标）→ 返回结果。
+**第二个代码块 — 等待 15 秒后查询结果：**
+```python
+import time
+time.sleep(15)
 
-关键：用 `run_server_backtest(script_content=...)` 而不是 `run_backtest(signals=...)`。
+import sys
+sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient(timeout=300.0)
+bt = client.check_backtest("{job_id}")
+if bt["status"] == "completed":
+    client.print_metrics(bt)
+elif bt["status"] == "running":
+    print("⏳ 还在执行中，请稍后再查询...")
+else:
+    print(f"❌ 回测失败: {bt.get('error', '未知')}")
+```
+如果 status 是 running，再等 10 秒执行第三个代码块再查一次。
+
+**为什么分两个代码块？** 因为用户需要在提交后立刻看到"任务已提交"的反馈，而不是等整个回测跑完才看到所有输出。
+
+关键：用 `submit_backtest()` + `check_backtest()` 而不是 `run_server_backtest()`。
 服务器地址和认证已内置在 api_client.py 中，无需配置。
 
 ### ⚠️ 展示规则（必须遵守）
