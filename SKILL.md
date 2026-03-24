@@ -16,6 +16,7 @@ description: >
 5. **生成策略后如果用户说回测，立刻执行**，不要再确认。
 6. **回测失败时自动重试一次**，不要问用户要不要重试。
 7. **用户问"怎么优化"、"如何改进"、"怎么提高收益"时，优先使用参数优化功能**（`run_optimization`）自动搜索最优参数，而不是手动分析建议。先写一个带 PARAMS 的策略模板，然后用遗传算法或贝叶斯优化自动找最优组合。
+8. **必须使用 `api_client.py` 中的 `QuantAPIClient`**。禁止自己写 `httpx.post()`/`requests.post()` 直接调 API。`QuantAPIClient` 已封装认证、异步轮询、进度显示、错误重试。
 
 ---
 
@@ -84,17 +85,15 @@ pip3 install httpx loguru 2>/dev/null || pip install httpx loguru 2>/dev/null ||
 ```
 只需要 httpx 和 loguru。不需要 numpy/pandas/yfinance，数据在服务器端拉取。如果所有 pip 命令都失败，告诉用户手动安装这两个包。
 
-### 步骤二：读取策略脚本源码 + 调服务器回测API
+### 步骤二：提交回测任务（第一个代码块）
 ```python
 import sys
 sys.path.insert(0, '{baseDir}/scripts')
 from api_client import QuantAPIClient
 
-# 读取策略脚本的源码（不是运行它）
 with open('{baseDir}/strategies/xxx_strategy.py', 'r') as f:
     script_content = f.read()
 
-# 把源码上传给服务器，服务器负责一切：拉K线 → 跑脚本生成信号 → 回测引擎模拟交易
 client = QuantAPIClient(timeout=300.0)
 bt = client.run_server_backtest(
     script_content=script_content,
@@ -107,10 +106,10 @@ bt = client.run_server_backtest(
     initial_capital=100000,
     direction="long_short",
 )
-
-# 展示回测报告（已包含结论）
 client.print_metrics(bt)
 ```
+
+`run_server_backtest()` 内部会自动：提交任务 → 每 5 秒轮询进度 → 打印阶段（脚本执行/拉K线/模拟交易/计算指标）→ 返回结果。
 
 关键：用 `run_server_backtest(script_content=...)` 而不是 `run_backtest(signals=...)`。
 服务器地址和认证已内置在 api_client.py 中，无需配置。
