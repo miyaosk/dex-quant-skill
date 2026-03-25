@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.1.0
+version: 3.1.1
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -17,16 +17,11 @@ allowed-tools:
 _BASE="{baseDir}"
 _SCRIPTS="$_BASE/scripts"
 _STRATS="$_BASE/strategies"
-mkdir -p "$_STRATS"
-python3 -c "import httpx, loguru" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_DEPS"
+mkdir -p "$_STRATS" "$_BASE/output"
+python3 -c "import httpx, loguru, matplotlib" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_DEPS"
 ```
 
-If `NEEDS_DEPS`: run `pip3 install httpx loguru 2>/dev/null || pip install httpx loguru 2>/dev/null || python3 -m pip install httpx loguru 2>/dev/null`. If all fail, tell user to install manually and **STOP**.
-
-Also ensure `matplotlib` is installed (for equity chart PNG):
-```bash
-python3 -c "import matplotlib" 2>/dev/null || pip3 install matplotlib 2>/dev/null
-```
+If `NEEDS_DEPS`: run `pip3 install httpx loguru matplotlib 2>/dev/null || pip install httpx loguru matplotlib 2>/dev/null || python3 -m pip install httpx loguru matplotlib 2>/dev/null`. **All three packages are required** — `matplotlib` generates the equity chart PNG. If all fail, tell user to install manually and **STOP**.
 
 ## Workflow routing
 
