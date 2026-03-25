@@ -677,7 +677,8 @@ class QuantAPIClient:
             for item in items:
                 s = item["score"]
                 dot = "🟢" if s == 2 else ("🟡" if s == 1 else "🔴")
-                lines.append(f"{dot} {item['name']} {item['value']}  ({item.get('thresholds', '')})")
+                label = "优" if s == 2 else ("及格" if s == 1 else "差")
+                lines.append(f"{dot} {item['name']} {item['value']}  {label}")
             lines.append(f"━━━━━━━━━━━━━━━━━━━━")
 
         if grade_label:
