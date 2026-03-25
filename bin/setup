@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🔧 dex-quant-skill setup"
+
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+STRATS_DIR="$SKILL_DIR/strategies"
+
+mkdir -p "$STRATS_DIR"
+
+if python3 -c "import httpx, loguru" 2>/dev/null; then
+  echo "✅ Dependencies OK (httpx, loguru)"
+else
+  echo "📦 Installing dependencies..."
+  pip3 install httpx loguru 2>/dev/null \
+    || pip install httpx loguru 2>/dev/null \
+    || python3 -m pip install httpx loguru 2>/dev/null \
+    || { echo "⚠️  Auto-install failed. Run: pip install httpx loguru"; exit 1; }
+  echo "✅ Dependencies installed"
+fi
+
+echo "✅ Ready — strategies dir: $STRATS_DIR"
