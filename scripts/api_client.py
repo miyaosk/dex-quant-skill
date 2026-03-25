@@ -726,6 +726,63 @@ class QuantAPIClient:
         print(f"  结论: {evaluation.get('grade_label', '')}")
         print()
 
+    _font_configured = False
+
+    @staticmethod
+    def _setup_chinese_font() -> None:
+        """配置 matplotlib 中文字体（只执行一次）。"""
+        if QuantAPIClient._font_configured:
+            return
+        QuantAPIClient._font_configured = True
+
+        import matplotlib
+        import matplotlib.font_manager as fm
+
+        candidates = [
+            "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC",
+            "WenQuanYi Micro Hei", "WenQuanYi Zen Hei",
+            "SimHei", "Microsoft YaHei", "PingFang SC", "Heiti SC",
+            "Arial Unicode MS", "DejaVu Sans",
+        ]
+        available = {f.name for f in fm.fontManager.ttflist}
+        for name in candidates:
+            if name in available:
+                matplotlib.rcParams["font.sans-serif"] = [name, "DejaVu Sans"]
+                matplotlib.rcParams["axes.unicode_minus"] = False
+                return
+
+        font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
+        font_file = os.path.join(font_dir, "NotoSansSC-Regular.ttf")
+
+        if not os.path.exists(font_file):
+            print("  ⏳ 下载中文字体 ...", flush=True)
+            try:
+                Path(font_dir).mkdir(parents=True, exist_ok=True)
+                import subprocess, sys
+                url = "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
+                subprocess.check_call(
+                    ["curl", "-sL", "-o", font_file, url],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=30,
+                )
+            except Exception:
+                try:
+                    url2 = "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
+                    subprocess.check_call(
+                        ["curl", "-sL", "-o", font_file, url2],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=30,
+                    )
+                except Exception:
+                    print("  ⚠ 中文字体下载失败，图表中文可能显示为方框")
+                    return
+
+        if os.path.exists(font_file):
+            fm.fontManager.addfont(font_file)
+            prop = fm.FontProperties(fname=font_file)
+            matplotlib.rcParams["font.sans-serif"] = [prop.get_name(), "DejaVu Sans"]
+            matplotlib.rcParams["axes.unicode_minus"] = False
+
     @staticmethod
     def _print_equity_chart(
         equity_curve: list,
@@ -762,6 +819,8 @@ class QuantAPIClient:
         import matplotlib.dates as mdates
         from matplotlib.gridspec import GridSpec
         from datetime import datetime
+
+        QuantAPIClient._setup_chinese_font()
 
         metrics = metrics or {}
         evaluation = evaluation or {}
