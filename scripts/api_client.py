@@ -698,11 +698,16 @@ class QuantAPIClient:
             result.get("equity_curve", []),
             init_cap,
             strategy_name=name,
+            metrics=m,
+            evaluation=evaluation,
+            leverage=leverage,
+            mode_label=mode_label,
+            trades=result.get("trades", []),
         )
         if chart_path:
             result["_equity_chart_path"] = chart_path
 
-        print("\n⬆ 以上为完整回测报告，请原样转发给用户，并将图片作为附件发送。")
+        print("\n⬆ 以上为回测报告，请将图片作为附件发送给用户。")
 
     @staticmethod
     def _print_evaluation(evaluation: dict) -> None:
@@ -736,8 +741,13 @@ class QuantAPIClient:
         initial_capital: float,
         strategy_name: str = "",
         output_dir: str = "",
+        metrics: dict | None = None,
+        evaluation: dict | None = None,
+        leverage: int = 1,
+        mode_label: str = "逐仓",
+        trades: list | None = None,
     ) -> str | None:
-        """生成资金曲线 PNG 图片，返回文件路径。"""
+        """生成完整回测报告图（指标 + 评分 + 资金曲线），返回文件路径。"""
         if not equity_curve or len(equity_curve) < 2:
             return None
 
@@ -759,7 +769,12 @@ class QuantAPIClient:
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import matplotlib.dates as mdates
+        from matplotlib.gridspec import GridSpec
         from datetime import datetime
+
+        metrics = metrics or {}
+        evaluation = evaluation or {}
+        trades = trades or []
 
         equities = [e.get("equity", initial_capital) for e in equity_curve]
         raw_dates = [e.get("datetime", "") for e in equity_curve]
@@ -775,56 +790,114 @@ class QuantAPIClient:
         final_val = equities[-1]
         ret_pct = (final_val - initial_capital) / initial_capital * 100
 
-        fig, ax = plt.subplots(figsize=(12, 5))
-        fig.patch.set_facecolor("#1a1a2e")
-        ax.set_facecolor("#16213e")
+        BG = "#1a1a2e"
+        PANEL = "#16213e"
+        WHITE = "#ffffff"
+        GREEN = "#00d4aa"
+        RED = "#ff6b6b"
+        YELLOW = "#ffd93d"
+        GRAY = "#aaaaaa"
+        color = GREEN if final_val >= initial_capital else RED
 
-        color = "#00d4aa" if final_val >= initial_capital else "#ff6b6b"
-        ax.plot(dates, equities, color=color, linewidth=1.5, zorder=3)
-        ax.fill_between(dates, equities, initial_capital, alpha=0.15, color=color, zorder=2)
+        fig = plt.figure(figsize=(12, 9), facecolor=BG)
+        gs = GridSpec(3, 2, figure=fig, height_ratios=[0.8, 3, 0.6],
+                      hspace=0.3, wspace=0.3,
+                      left=0.08, right=0.95, top=0.93, bottom=0.06)
 
-        ax.axhline(y=initial_capital, color="#ffffff", linewidth=0.8, linestyle="--", alpha=0.4, zorder=1)
+        # ── 顶部: 策略名 + 核心指标 ──
+        ax_header = fig.add_subplot(gs[0, :])
+        ax_header.set_facecolor(BG)
+        ax_header.axis("off")
 
-        ax.plot(dates[hi_idx], hi_val, "^", color="#00d4aa", markersize=8, zorder=4)
-        ax.annotate(f"High {hi_val:,.0f}", (dates[hi_idx], hi_val),
-                    textcoords="offset points", xytext=(5, 10),
-                    fontsize=8, color="#00d4aa", weight="bold")
+        grade = evaluation.get("grade", "")
+        grade_label = evaluation.get("grade_label", "")
+        score = evaluation.get("score", 0)
+        max_score = evaluation.get("max_score", 14)
 
-        ax.plot(dates[lo_idx], lo_val, "v", color="#ff6b6b", markersize=8, zorder=4)
-        ax.annotate(f"Low {lo_val:,.0f}", (dates[lo_idx], lo_val),
-                    textcoords="offset points", xytext=(5, -15),
-                    fontsize=8, color="#ff6b6b", weight="bold")
-
-        title = strategy_name or "Equity Curve"
+        title = strategy_name or "Backtest Report"
         sign = "+" if ret_pct >= 0 else ""
-        ax.set_title(f"{title}  |  {initial_capital:,.0f} → {final_val:,.0f} ({sign}{ret_pct:.2f}%)",
-                     color="white", fontsize=13, weight="bold", pad=12)
+        header_line1 = f"{title}"
+        header_line2 = (
+            f"Capital {initial_capital:,.0f} → {final_val:,.0f}  ({sign}{ret_pct:.2f}%)    "
+            f"Sharpe {metrics.get('sharpe_ratio', 0):.2f}    "
+            f"MaxDD {abs(metrics.get('max_drawdown_pct', 0)):.2%}    "
+            f"WinRate {metrics.get('win_rate', 0):.1%}    "
+            f"Trades {metrics.get('total_trades', 0)}    "
+            f"{leverage}x {mode_label}"
+        )
 
-        ax.tick_params(colors="#aaaaaa", labelsize=9)
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+        ax_header.text(0.5, 0.7, header_line1, transform=ax_header.transAxes,
+                       fontsize=16, color=WHITE, weight="bold", ha="center", va="center")
+        ax_header.text(0.5, 0.2, header_line2, transform=ax_header.transAxes,
+                       fontsize=10, color=GRAY, ha="center", va="center", family="monospace")
+
+        # ── 中部左: 资金曲线 ──
+        ax_chart = fig.add_subplot(gs[1, :])
+        ax_chart.set_facecolor(PANEL)
+        ax_chart.plot(dates, equities, color=color, linewidth=1.5, zorder=3)
+        ax_chart.fill_between(dates, equities, initial_capital, alpha=0.15, color=color, zorder=2)
+        ax_chart.axhline(y=initial_capital, color=WHITE, linewidth=0.8, linestyle="--", alpha=0.4, zorder=1)
+
+        ax_chart.plot(dates[hi_idx], hi_val, "^", color=GREEN, markersize=8, zorder=4)
+        ax_chart.annotate(f"High {hi_val:,.0f}", (dates[hi_idx], hi_val),
+                          textcoords="offset points", xytext=(5, 10),
+                          fontsize=8, color=GREEN, weight="bold")
+        ax_chart.plot(dates[lo_idx], lo_val, "v", color=RED, markersize=8, zorder=4)
+        ax_chart.annotate(f"Low {lo_val:,.0f}", (dates[lo_idx], lo_val),
+                          textcoords="offset points", xytext=(5, -15),
+                          fontsize=8, color=RED, weight="bold")
+
+        ax_chart.tick_params(colors=GRAY, labelsize=9)
+        ax_chart.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:,.0f}"))
         if isinstance(dates[0], datetime):
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            ax_chart.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+            ax_chart.xaxis.set_major_locator(mdates.AutoDateLocator())
             fig.autofmt_xdate(rotation=30)
-        ax.grid(True, alpha=0.15, color="#ffffff")
-        for spine in ax.spines.values():
+        ax_chart.grid(True, alpha=0.15, color=WHITE)
+        for spine in ax_chart.spines.values():
             spine.set_color("#333333")
 
-        plt.tight_layout()
+        # ── 底部左: 评分卡 ──
+        ax_score = fig.add_subplot(gs[2, 0])
+        ax_score.set_facecolor(BG)
+        ax_score.axis("off")
+
+        items = evaluation.get("items", [])
+        if items:
+            score_parts = []
+            for item in items:
+                s = item["score"]
+                dot = "●" if s == 2 else ("◐" if s == 1 else "○")
+                score_parts.append(f"{dot}{item['name']}")
+            score_text = f"Grade {grade} ({score}/{max_score})  " + "  ".join(score_parts)
+            ax_score.text(0.0, 0.5, score_text, transform=ax_score.transAxes,
+                          fontsize=9, color=GRAY, va="center", family="monospace")
+
+        # ── 底部右: 结论 ──
+        ax_conclusion = fig.add_subplot(gs[2, 1])
+        ax_conclusion.set_facecolor(BG)
+        ax_conclusion.axis("off")
+
+        if grade_label:
+            conclusion_color = GREEN if grade in ("A", "B") else (YELLOW if grade == "C" else RED)
+            ax_conclusion.text(1.0, 0.5, f"[{grade}] {grade_label}",
+                               transform=ax_conclusion.transAxes,
+                               fontsize=11, color=conclusion_color, weight="bold",
+                               ha="right", va="center")
 
         if not output_dir:
             output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "output")
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        safe_name = (strategy_name or "equity").replace(" ", "_").replace("/", "_")[:30]
+        safe_name = (strategy_name or "report").replace(" ", "_").replace("/", "_")[:30]
         ts = int(_time.time())
         filepath = os.path.join(output_dir, f"{safe_name}_{ts}.png")
 
-        fig.savefig(filepath, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
+        fig.savefig(filepath, dpi=150, facecolor=fig.get_facecolor())
         plt.close(fig)
 
-        print(f"\n  📈 资金曲线已保存: {filepath}")
-        print(f"  👉 请将此图片作为附件发送给用户（不要只打印路径）")
+        print(f"\n  📈 回测报告图已保存: {filepath}")
+        print(f"  👉 请将此图片作为附件发送给用户")
         return filepath
 
     @staticmethod
