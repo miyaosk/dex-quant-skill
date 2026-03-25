@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 2.3.1
+version: 2.4.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -27,9 +27,20 @@ If `NEEDS_DEPS`: run `pip3 install httpx loguru 2>/dev/null || pip install httpx
 
 - **Prefer direct execution.** When the user asks to backtest or optimize, run the code and show results rather than listing steps.
 - **Streamline decisions.** Use sensible defaults (server backtest, genetic optimization) unless the user specifies otherwise.
-- **Backtest = submit script to server.** Server handles K-line data, script execution, and trade simulation. No local data download needed.
+- **Backtest = upload script source code to server.** Read the `.py` file content as a string, then call `submit_backtest(script_content=...)`. Server handles everything: fetch K-lines, execute the script, simulate trades, return metrics. **No local execution of the strategy script needed.**
 - **Use `QuantAPIClient` for all API calls.** It handles auth, async polling, progress display, and error retry.
 - **"Optimize" = `run_optimization()`**, not manual parameter tweaking. See §4.
+
+### ❌ NEVER do these
+
+| Forbidden | Why | Correct approach |
+|-----------|-----|-----------------|
+| Run the strategy script locally to get signals | Server runs it. You just upload the source code string. | `client.submit_backtest(script_content=...)` |
+| `import os`, `import subprocess`, `import socket` in strategy | Server sandbox blocks these imports | Only import `sys`, `numpy`, `data_client`, `indicators` |
+| Use `df.rolling()`, `df.shift()`, `df.apply()` | Server pandas may be restricted; also slower | Use `ind.ema()`, `ind.sma()`, `ind.rsi()` from Indicators |
+| Install numpy/pandas/yfinance for backtest | Not needed locally; server has them | Only install `httpx loguru` locally |
+| Write your own backtest engine locally | Server already has a full backtest engine | Use `submit_backtest()` |
+| Call `httpx.post()` / `requests.post()` directly | Missing auth, polling, error handling | Use `QuantAPIClient` methods |
 
 ## Workflows
 
@@ -37,36 +48,56 @@ If `NEEDS_DEPS`: run `pip3 install httpx loguru 2>/dev/null || pip install httpx
 
 User describes a trading idea → you generate a Python script → save to `{baseDir}/strategies/`.
 
+**This script is NOT executed locally.** Its source code is uploaded to the server as a string, and the server runs it in a sandbox. The script must follow these sandbox rules:
+
+**Server sandbox rules:**
+- ✅ Allowed imports: `sys`, `numpy` (as `np`), `data_client`, `indicators`
+- ❌ Blocked imports: `os`, `subprocess`, `socket`, `requests`, `httpx`
+- ❌ No `df.rolling()`, `df.shift()`, `df.apply()` — use Indicators methods instead
+- ✅ Use `df["close"].values` to get numpy arrays, then pass to `ind.ema()` etc.
+- ✅ Use `float(df["close"].iloc[i])` to get a single value
+- ✅ Use `str(df.iloc[i]["datetime"])` for timestamps
+
+**Strategy template:**
 ```python
 import sys
 sys.path.insert(0, '{baseDir}/scripts')
 from data_client import DataClient
 from indicators import Indicators as ind
+import numpy as np
 
-def generate_signals(mode, start_date, end_date):
+def generate_signals(mode='backtest', start_date=None, end_date=None):
     dc = DataClient()
     df = dc.get_perp_klines("BTCUSDT", "4h", start_date, end_date)
-    ema20 = ind.ema(df["close"], 20)
-    ema60 = ind.ema(df["close"], 60)
+
+    close = df["close"].values.astype(float)
+    high = df["high"].values.astype(float)
+    low = df["low"].values.astype(float)
+
+    ema20 = ind.ema(close, 20)
+    ema60 = ind.ema(close, 60)
+
     signals = []
     for i in range(61, len(df)):
+        if np.isnan(ema20[i]) or np.isnan(ema60[i]):
+            continue
         if ema20[i] > ema60[i] and ema20[i-1] <= ema60[i-1]:
             signals.append({
-                "timestamp": str(df.iloc[i]["datetime"]),  # ⚠️ must be datetime, NOT row index
+                "timestamp": str(df.iloc[i]["datetime"]),
                 "symbol": "BTCUSDT", "action": "buy", "direction": "long",
-                "confidence": 0.7, "reason": "EMA20 cross up",
+                "confidence": 0.7, "reason": "EMA20 cross up EMA60",
                 "price_at_signal": float(df["close"].iloc[i])
             })
     return {"strategy_name": "My Strategy", "signals": signals}
 ```
 
-**Signal format:** `timestamp, symbol, action(buy/sell), direction(long/short), confidence, reason, price_at_signal`. Optional: `suggested_stop_loss, suggested_take_profit`.
+**Signal fields:** `timestamp, symbol, action(buy/sell), direction(long/short), confidence, reason, price_at_signal`. Optional: `suggested_stop_loss, suggested_take_profit`.
 
 **⚠️ timestamp must be `str(df.iloc[i]["datetime"])`** — never use row index `i` or `df.index[i]`.
 
 ### 2. Backtest (server-side, free, unlimited)
 
-Submit script source code to server. Server fetches K-lines, runs script, simulates trades, returns metrics.
+**How it works:** Read the strategy `.py` file → pass its content as a string to `submit_backtest(script_content=...)` → server receives the string, executes the script internally, fetches K-lines, simulates trades, returns metrics. You never run the strategy script locally.
 
 **Step 1 — Submit (first code block):**
 ```python
