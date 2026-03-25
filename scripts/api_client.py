@@ -649,16 +649,17 @@ class QuantAPIClient:
             result["_equity_chart_path"] = chart_path
 
         sign = "+" if ret else ""
+        ret_icon = "📈" if ret >= 0 else "📉"
         lines = [
             f"📊 {name} 回测报告",
             f"━━━━━━━━━━━━━━━━━━━━",
-            f"本金 {init_cap:,.0f} → 余额 {bal:,.0f}",
-            f"收益 {ret:+.2%}  Sharpe {m.get('sharpe_ratio', 0):.2f}  Sortino {m.get('sortino_ratio', 0):.2f}",
-            f"回撤 {abs(m.get('max_drawdown_pct', 0)):.2%}  胜率 {m.get('win_rate', 0):.1%}  盈亏比 {m.get('profit_loss_ratio', 0):.2f}",
-            f"交易 {m.get('total_trades', 0)}笔  杠杆 {leverage}x  仓位 {mode_label}",
+            f"💰 本金 {init_cap:,.0f} → 余额 {bal:,.0f}",
+            f"{ret_icon} 收益 {ret:+.2%}  📐 Sharpe {m.get('sharpe_ratio', 0):.2f}  📐 Sortino {m.get('sortino_ratio', 0):.2f}",
+            f"⚡ 回撤 {abs(m.get('max_drawdown_pct', 0)):.2%}  🎯 胜率 {m.get('win_rate', 0):.1%}  ⚖️ 盈亏比 {m.get('profit_loss_ratio', 0):.2f}",
+            f"🔄 交易 {m.get('total_trades', 0)}笔  🏗️ 杠杆 {leverage}x  📦 仓位 {mode_label}",
         ]
         if m.get('liquidation_count', 0) > 0:
-            lines.append(f"⚠ 爆仓 {m['liquidation_count']} 次")
+            lines.append(f"💥 爆仓 {m['liquidation_count']} 次")
 
         conclusion = result.get("conclusion", "")
         conclusion_map = {
@@ -672,41 +673,41 @@ class QuantAPIClient:
         if items:
             score_val = evaluation.get("score", 0)
             max_score = evaluation.get("max_score", 14)
-            lines.append(f"评分 {score_val}/{max_score}  {grade}级")
+            lines.append(f"🏆 评分 {score_val}/{max_score}  {grade}级")
             for item in items:
                 s = item["score"]
-                dot = "●" if s == 2 else ("◐" if s == 1 else "○")
+                dot = "🟢" if s == 2 else ("🟡" if s == 1 else "🔴")
                 lines.append(f"{dot} {item['name']} {item['value']}  ({item.get('thresholds', '')})")
             lines.append(f"━━━━━━━━━━━━━━━━━━━━")
 
         if grade_label:
-            lines.append(f"结论: [{grade}] {grade_label}")
+            lines.append(f"📋 结论: [{grade}] {grade_label}")
         elif conclusion:
-            lines.append(f"结论: {conclusion_map.get(conclusion, conclusion)}")
+            lines.append(f"📋 结论: {conclusion_map.get(conclusion, conclusion)}")
         else:
             if ret >= 0 and m.get('sharpe_ratio', 0) > 0.5:
-                lines.append("结论: ⚠️ 建议先模拟观察")
+                lines.append("📋 结论: ⚠️ 建议先模拟观察")
             elif ret < 0:
-                lines.append("结论: ❌ 策略亏损，建议优化后重测")
+                lines.append("📋 结论: ❌ 策略亏损，建议优化后重测")
             else:
-                lines.append("结论: ⚠️ 收益偏低，建议优化参数")
+                lines.append("📋 结论: ⚠️ 收益偏低，建议优化参数")
 
         lines.append("")
         if ret > 0.2 and m.get('sharpe_ratio', 0) > 1.5:
-            lines.append("建议: 效果不错，可考虑小仓实盘或优化参数")
+            lines.append("💡 建议: 效果不错，可考虑小仓实盘或优化参数")
         elif ret > 0:
-            lines.append("建议: 有正收益但不够稳健，建议优化参数后重测")
+            lines.append("💡 建议: 有正收益但不够稳健，建议优化参数后重测")
         elif m.get('total_trades', 0) == 0:
-            lines.append("建议: 没有交易信号，入场条件可能太严格")
+            lines.append("💡 建议: 没有交易信号，入场条件可能太严格")
         else:
-            lines.append("建议: 策略需要调整，可优化参数或重新设计入场/出场逻辑")
+            lines.append("💡 建议: 策略需要调整，可优化参数或重新设计入场/出场逻辑")
 
         trades = result.get("trades", [])
         if trades:
             opens = [t for t in trades if t.get("action") == "open"]
             closes = [t for t in trades if t.get("action") != "open"]
             lines.append(f"")
-            lines.append(f"交易摘要 ({len(opens)}开/{len(closes)}平，前5笔)")
+            lines.append(f"📝 交易摘要 ({len(opens)}开/{len(closes)}平，前5笔)")
             for t in trades[:5]:
                 dt = t.get('datetime', '')[:10]
                 action = "开" if t.get('action') == 'open' else "平"
