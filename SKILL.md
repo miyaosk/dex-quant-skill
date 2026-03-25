@@ -248,10 +248,16 @@ client.print_metrics(bt)
 | `status: running` after 60s | Poll every 15s, up to 5 minutes |
 | Network error / timeout | Retry once, then report |
 
-### Display rules
+### Display rules (CRITICAL)
 
-- **Always** show full `print_metrics(bt)`. It now includes evaluation scorecard + equity chart + trade details.
-- `print_trades(bt)` prints detailed table (leverage, margin mode, margin used per trade).
+- **You MUST call `client.print_metrics(bt)` in the code block and show its raw terminal output.** This function prints:
+  1. 绩效总览卡片（本金/余额/收益/Sharpe/回撤/胜率/杠杆/仓位）
+  2. 📊 策略评分卡（7项指标逐项🟢🟡🔴评分 + ABCDF等级）
+  3. 📈 ASCII 资金折线图（equity curve）
+  4. 📋 交易明细表（每笔的杠杆/仓位模式/保证金/盈亏）
+- **NEVER manually format or summarize the metrics yourself.** The print_metrics() output IS the report. Show it as-is.
+- **NEVER skip the chart or trade details.** If they don't appear, something is wrong — debug it.
+- `print_trades(bt)` prints detailed table (leverage, margin mode, margin used per trade) — only needed if user asks for more trades beyond the default 30.
 - After completion, suggest next step **based on grade**:
   - A/B 级 → "效果不错！要优化参数吗？" (→ §3) 或 "可以考虑小仓实盘"
   - C 级 → "及格但不够好，要优化参数还是调整逻辑？"
@@ -463,7 +469,8 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Build local backtest engine | Server already has one | Use `submit_backtest()` |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | Manually tweak params + re-backtest | That's guessing | Use §3 `run_optimization()` |
-| Summarize metrics in your own words | User needs real numbers | Show full `print_metrics()` output |
+| Summarize metrics in your own words | User needs real numbers + chart + scorecard | Show full `print_metrics()` terminal output as-is |
+| Skip equity chart or trade details | User explicitly requested them | Always let `print_metrics()` output everything |
 
 ---
 
