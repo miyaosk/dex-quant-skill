@@ -785,7 +785,7 @@ class QuantAPIClient:
         plt.close(fig)
 
         print(f"\n  📈 资金曲线已保存: {filepath}")
-        print(f"  👉 请在回复中展示此图片: ![equity]({filepath})")
+        print(f"  👉 请将此图片作为附件发送给用户（不要只打印路径）")
         return filepath
 
     @staticmethod
