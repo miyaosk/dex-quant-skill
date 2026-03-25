@@ -200,6 +200,9 @@ client = QuantAPIClient(timeout=300.0)
 bt = client.check_backtest("{job_id}")
 if bt["status"] == "completed":
     client.print_metrics(bt)
+    chart = bt.get("_equity_chart_path", "")
+    if chart:
+        print(f"![equity]({chart})")
 elif bt["status"] == "running":
     print("⏳ 还在执行中，请稍后再查询...")
 else:
@@ -225,6 +228,9 @@ bt = client.run_server_backtest(
     leverage=3, initial_capital=100000, direction="long_short",
 )
 client.print_metrics(bt)
+chart = bt.get("_equity_chart_path", "")
+if chart:
+    print(f"![equity]({chart})")
 ```
 
 ### Backtest parameters
@@ -255,7 +261,7 @@ client.print_metrics(bt)
   2. 📊 策略评分卡（7项指标逐项🟢🟡🔴评分 + ABCDF等级）
   3. 📈 资金曲线 PNG 图片（保存到 `{baseDir}/output/` 目录，控制台输出文件路径）
   4. 📋 交易明细表（每笔的杠杆/仓位模式/保证金/盈亏）
-- **图片展示:** `print_metrics()` 会生成 PNG 图片并打印路径。你 **MUST** 在回复中展示该图片（用 markdown `![](filepath)` 或平台的图片发送功能）。如果路径打印了但用户没看到图，主动发送该文件。
+- **图片展示 (CRITICAL):** `print_metrics()` 会生成 PNG 图片，路径存在 `bt["_equity_chart_path"]` 中。代码块里 **MUST** 在 `print_metrics(bt)` 之后加 `print(f"![equity]({bt.get('_equity_chart_path', '')})")` 来展示图片。如果终端输出了 `👉 请在回复中展示此图片` 的提示，你 **MUST** 在回复里用 `![](路径)` 展示该图。**NEVER 只打印路径而不展示图片。**
 - **NEVER manually format or summarize the metrics yourself.** The print_metrics() output IS the report. Show it as-is.
 - **NEVER skip the chart or trade details.** If they don't appear, something is wrong — debug it.
 - `print_trades(bt)` prints detailed table (leverage, margin mode, margin used per trade) — only needed if user asks for more trades beyond the default 30.
