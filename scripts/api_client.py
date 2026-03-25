@@ -921,14 +921,15 @@ class QuantAPIClient:
                     transform=ax_top.transAxes,
                     fontsize=13, color=GRAY, ha="center", va="center")
 
+        lev_label = "Iso" if mode_label == "逐仓" else "Cross"
         kpi_data = [
-            ("收益", f"{sign}{ret_pct:.2f}%", color),
+            ("Return", f"{sign}{ret_pct:.2f}%", color),
             ("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}", LIGHT),
-            ("回撤", f"{abs(metrics.get('max_drawdown_pct', 0)):.2%}", LIGHT),
-            ("胜率", f"{metrics.get('win_rate', 0):.1%}", LIGHT),
-            ("盈亏比", f"{metrics.get('profit_loss_ratio', 0):.2f}", LIGHT),
-            ("交易", f"{metrics.get('total_trades', 0)}笔", LIGHT),
-            ("杠杆", f"{leverage}x {mode_label}", LIGHT),
+            ("MaxDD", f"{abs(metrics.get('max_drawdown_pct', 0)):.2%}", LIGHT),
+            ("WinRate", f"{metrics.get('win_rate', 0):.1%}", LIGHT),
+            ("P/L", f"{metrics.get('profit_loss_ratio', 0):.2f}", LIGHT),
+            ("Trades", f"{metrics.get('total_trades', 0)}", LIGHT),
+            ("Lev", f"{leverage}x {lev_label}", LIGHT),
         ]
         n_kpi = len(kpi_data)
         card_w = 0.88 / n_kpi
@@ -986,7 +987,7 @@ class QuantAPIClient:
             conclusion_color = GREEN if grade in ("A", "B") else (YELLOW if grade == "C" else RED)
             bar_pct = score_val / max_score
 
-            ax_report.text(0.0, 0.95, "策略评分", transform=ax_report.transAxes,
+            ax_report.text(0.0, 0.95, "Score", transform=ax_report.transAxes,
                            fontsize=18, color=WHITE, weight="bold", va="top")
             ax_report.text(1.0, 0.95, f"{score_val}/{max_score}  {grade}级",
                            transform=ax_report.transAxes,
@@ -1002,6 +1003,23 @@ class QuantAPIClient:
                     (0.0, bar_y), bar_pct, bar_h, transform=ax_report.transAxes,
                     boxstyle="round,pad=0.004", facecolor=conclusion_color, edgecolor="none"))
 
+            name_map = {
+                "收益率": "Return", "收益": "Return",
+                "Sharpe": "Sharpe", "夏普": "Sharpe",
+                "最大回撤": "MaxDD", "回撤": "MaxDD",
+                "胜率": "WinRate",
+                "盈亏比": "P/L Ratio",
+                "交易数": "Trades", "交易": "Trades",
+                "爆仓": "Liq",
+            }
+            grade_map = {
+                "优秀策略，可直接实盘": "Excellent — ready for live",
+                "良好策略，建议小仓实盘验证": "Good — paper trade first",
+                "及格策略，建议先模拟观察": "Fair — needs observation",
+                "较差策略，需要优化后再测": "Poor — optimize & retest",
+                "失败策略，建议重新设计": "Failed — redesign strategy",
+            }
+
             row_y_start = 0.78
             row_h = 0.10
             for idx, item in enumerate(items):
@@ -1013,22 +1031,24 @@ class QuantAPIClient:
                     (0.0, y - 0.01), 1.0, row_h - 0.015, transform=ax_report.transAxes,
                     boxstyle="round,pad=0.008", facecolor=CARD, edgecolor="none"))
 
+                en_name = name_map.get(item["name"], item["name"])
                 dot = "●" if s == 2 else ("◐" if s == 1 else "○")
                 ax_report.text(0.03, y + 0.03, dot, transform=ax_report.transAxes,
                                fontsize=14, color=ic, va="center")
-                ax_report.text(0.07, y + 0.03, item["name"], transform=ax_report.transAxes,
+                ax_report.text(0.07, y + 0.03, en_name, transform=ax_report.transAxes,
                                fontsize=13, color=WHITE, va="center", weight="bold")
                 ax_report.text(0.50, y + 0.03, item["value"], transform=ax_report.transAxes,
                                fontsize=14, color=ic, va="center", weight="bold", ha="center")
                 ax_report.text(0.98, y + 0.03, item.get("thresholds", ""), transform=ax_report.transAxes,
                                fontsize=10, color=GRAY, va="center", ha="right")
 
+            en_grade_label = grade_map.get(grade_label, grade_label)
             box_y = row_y_start - len(items) * row_h - 0.02
             ax_report.add_patch(FancyBboxPatch(
                 (0.0, box_y - 0.01), 1.0, 0.07, transform=ax_report.transAxes,
                 boxstyle="round,pad=0.012", facecolor="#1a2540",
                 edgecolor=conclusion_color, linewidth=2))
-            ax_report.text(0.5, box_y + 0.025, f"[{grade}]  {grade_label}",
+            ax_report.text(0.5, box_y + 0.025, f"[{grade}]  {en_grade_label}",
                            transform=ax_report.transAxes,
                            fontsize=15, color=conclusion_color, weight="bold",
                            ha="center", va="center")
