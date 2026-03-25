@@ -36,7 +36,7 @@ from loguru import logger
 
 from machine_auth import MachineAuth
 
-DEFAULT_SERVER_URL = "https://generous-hope-production-6cf6.up.railway.app"
+DEFAULT_SERVER_URL = "https://dex-quant-app-production.up.railway.app"
 API_PREFIX = "/api/v1"
 
 
@@ -612,7 +612,7 @@ class QuantAPIClient:
 
     @staticmethod
     def print_metrics(result: dict) -> None:
-        """格式化打印回测结果（含结论）"""
+        """格式化打印回测结果（含结论 + 资金曲线 + 交易明细）"""
         if result.get("status") != "completed":
             print(f"回测失败: {result.get('error', '未知错误')}")
             return
@@ -627,35 +627,167 @@ class QuantAPIClient:
 
         ret = m.get('total_return_pct', 0)
         bal = m.get('final_balance', 0)
+        init_cap = m.get('initial_capital', 100000)
+        margin_mode = result.get('margin_mode', 'isolated')
+        leverage = result.get('leverage', m.get('leverage', 1))
+        mode_label = "逐仓" if margin_mode == "isolated" else "全仓"
 
-        print(f"\n{'─' * 40}")
+        print(f"\n{'━' * 50}")
         print(f"  {result.get('strategy_name', '策略')}  {conclusion_map.get(conclusion, conclusion)}")
-        print(f"{'─' * 40}")
-        print(f"  收益  {ret:>+.2%}    余额  {bal:>,.0f}")
-        print(f"  Sharpe {m.get('sharpe_ratio', 0):>.2f}    Sortino {m.get('sortino_ratio', 0):>.2f}")
-        print(f"  回撤  {abs(m.get('max_drawdown_pct', 0)):>.2%}    胜率  {m.get('win_rate', 0):>.1%}")
-        print(f"  交易  {m.get('total_trades', 0)}笔    盈亏比  {m.get('profit_loss_ratio', 0):>.2f}")
+        print(f"{'━' * 50}")
+        print(f"  本金  {init_cap:>,.0f}    余额  {bal:>,.0f}    收益  {ret:>+.2%}")
+        print(f"  Sharpe {m.get('sharpe_ratio', 0):>.2f}    Sortino {m.get('sortino_ratio', 0):>.2f}    盈亏比  {m.get('profit_loss_ratio', 0):>.2f}")
+        print(f"  回撤  {abs(m.get('max_drawdown_pct', 0)):>.2%}    胜率  {m.get('win_rate', 0):>.1%}    交易  {m.get('total_trades', 0)}笔")
+        print(f"  杠杆  {leverage}x        仓位  {mode_label}")
         if m.get('liquidation_count', 0) > 0:
             print(f"  ⚠ 爆仓 {m['liquidation_count']} 次")
-        print(f"{'─' * 40}")
+        print(f"{'━' * 50}")
+
+        QuantAPIClient._print_equity_chart(result.get("equity_curve", []), init_cap)
+        QuantAPIClient._print_trade_details(result.get("trades", []), leverage, mode_label)
 
     @staticmethod
-    def print_trades(result: dict, limit: int = 20) -> None:
-        """打印交易记录（默认不调用）"""
-        trades = result.get("trades", [])
+    def _print_equity_chart(equity_curve: list, initial_capital: float, width: int = 60, height: int = 15) -> None:
+        """ASCII 折线图：资金变化"""
+        if not equity_curve or len(equity_curve) < 2:
+            return
+
+        raw_values = [e.get("equity", initial_capital) for e in equity_curve]
+        dates = [e.get("datetime", "") for e in equity_curve]
+
+        step = max(1, len(raw_values) // width)
+        sampled = [raw_values[i * step] for i in range(min(width, len(raw_values) // step))]
+        if not sampled:
+            sampled = raw_values[:width]
+
+        lo, hi = min(sampled), max(sampled)
+        if hi == lo:
+            hi = lo + 1
+
+        rows = [[" "] * len(sampled) for _ in range(height + 1)]
+        prev_row = None
+        for col, v in enumerate(sampled):
+            row = round((v - lo) / (hi - lo) * height)
+            row = max(0, min(height, row))
+
+            if prev_row is not None:
+                if row > prev_row:
+                    for r in range(prev_row + 1, row):
+                        rows[r][col] = "│"
+                    rows[row][col] = "╭" if col > 0 else "•"
+                    if rows[prev_row][col] == " ":
+                        rows[prev_row][col] = "╰"
+                elif row < prev_row:
+                    for r in range(row + 1, prev_row):
+                        rows[r][col] = "│"
+                    rows[row][col] = "╮" if col > 0 else "•"
+                    if rows[prev_row][col] == " ":
+                        rows[prev_row][col] = "╯"
+                else:
+                    rows[row][col] = "─"
+            else:
+                rows[row][col] = "•"
+            prev_row = row
+
+        cap_row = round((initial_capital - lo) / (hi - lo) * height)
+        cap_row = max(0, min(height, cap_row))
+
+        print(f"\n  📈 资金变化 ({dates[0][:10]} → {dates[-1][:10]})")
+        print(f"     最高 {hi:>,.0f}  最低 {lo:>,.0f}  本金 {initial_capital:>,.0f}")
+        print()
+
+        y_labels = 5
+        for r in range(height, -1, -1):
+            if r % max(1, height // y_labels) == 0 or r == height or r == 0:
+                val = lo + (hi - lo) * r / height
+                label = f"  {val:>10,.0f} │"
+            else:
+                label = f"  {'':>10} │"
+
+            line_chars = []
+            for col in range(len(sampled)):
+                ch = rows[r][col]
+                if ch != " ":
+                    line_chars.append(ch)
+                elif r == cap_row:
+                    line_chars.append("┄")
+                else:
+                    line_chars.append(" ")
+
+            print(f"{label}{''.join(line_chars)}")
+
+        axis = f"  {'':>10} └{'─' * len(sampled)}"
+        print(axis)
+
+        first_dt = dates[0][:7] if dates[0] else ""
+        q1_idx = len(dates) // 4
+        mid_idx = len(dates) // 2
+        q3_idx = len(dates) * 3 // 4
+        last_dt = dates[-1][:7] if dates[-1] else ""
+        q1_dt = dates[q1_idx][:7] if q1_idx < len(dates) else ""
+        mid_dt = dates[mid_idx][:7] if mid_idx < len(dates) else ""
+        q3_dt = dates[q3_idx][:7] if q3_idx < len(dates) else ""
+
+        w = len(sampled)
+        seg = w // 4
+        ruler = f"{first_dt:<{seg}}{q1_dt:<{seg}}{mid_dt:<{seg}}{q3_dt:<{seg}}{last_dt}"
+        print(f"  {'':>11} {ruler}")
+        print()
+
+    @staticmethod
+    def _print_trade_details(trades: list, default_leverage: int = 1, mode_label: str = "逐仓", limit: int = 30) -> None:
+        """带仓位/杠杆/保证金的交易明细表"""
         if not trades:
             return
-        print(f"\n交易记录（共 {len(trades)} 笔，显示前 {min(limit, len(trades))} 笔）")
-        print(f"{'#':>3} {'时间':<20} {'动作':<8} {'方向':<5} {'价格':>10} {'盈亏':>10}")
+
+        opens = [t for t in trades if t.get("action") == "open"]
+        closes = [t for t in trades if t.get("action") != "open"]
+        total = len(trades)
+
+        print(f"  📋 交易明细（共 {total} 笔: {len(opens)} 开 / {len(closes)} 平，显示前 {min(limit, total)} 笔）")
+        print(f"  {'━' * 88}")
+        print(f"  {'#':>3} {'时间':<17} {'动作':<5} {'方向':<5} {'价格':>10} {'数量':>8} {'杠杆':>4} {'仓位模式':<5} {'保证金':>10} {'盈亏':>10}")
+        print(f"  {'─' * 88}")
+
         for t in trades[:limit]:
+            tid = t.get('trade_id', 0)
+            dt = t.get('datetime', '')[:16]
+            action = t.get('action', '')
+            side = t.get('side', '')
+            price = t.get('price', 0)
+            qty = t.get('quantity', 0)
+            lev = t.get('leverage', default_leverage)
+            pnl = t.get('pnl', 0)
+
+            margin = t.get('margin_used', 0)
+            if margin == 0:
+                nominal = price * qty
+                margin = nominal / lev if lev > 0 else nominal
+
+            t_mode = t.get('margin_mode', '')
+            t_mode_label = ("逐仓" if t_mode == "isolated" else "全仓") if t_mode else mode_label
+
+            action_icon = "🟢" if action == "open" else "🔴"
+            side_label = "多" if side == "long" else "空"
+            pnl_str = f"{pnl:>+10.2f}" if action != "open" else f"{'—':>10}"
+
             print(
-                f"{t.get('trade_id', 0):>3} "
-                f"{t.get('datetime', ''):<20} "
-                f"{t.get('action', ''):<8} "
-                f"{t.get('side', ''):<5} "
-                f"{t.get('price', 0):>10.2f} "
-                f"{t.get('pnl', 0):>+10.2f}"
+                f"  {tid:>3} {dt:<17} {action_icon}{action:<4} {side_label:<5}"
+                f" {price:>10.2f} {qty:>8.4f} {lev:>3}x {t_mode_label:<5}"
+                f" {margin:>10.2f} {pnl_str}"
             )
+
+        if total > limit:
+            print(f"  ... 还有 {total - limit} 笔未显示")
+        print(f"  {'━' * 88}")
+
+    @staticmethod
+    def print_trades(result: dict, limit: int = 30) -> None:
+        """打印交易记录（复用详细表格）"""
+        leverage = result.get("leverage", result.get("metrics", {}).get("leverage", 1))
+        margin_mode = result.get("margin_mode", "isolated")
+        mode_label = "逐仓" if margin_mode == "isolated" else "全仓"
+        QuantAPIClient._print_trade_details(result.get("trades", []), leverage, mode_label, limit)
 
     @staticmethod
     def print_conclusion(result: dict) -> None:
