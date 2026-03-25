@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 2.3.0
+version: 2.3.1
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -23,12 +23,12 @@ python3 -c "import httpx, loguru" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_D
 
 If `NEEDS_DEPS`: run `pip3 install httpx loguru 2>/dev/null || pip install httpx loguru 2>/dev/null || python3 -m pip install httpx loguru 2>/dev/null`. If all fail, tell user to install manually.
 
-## IMPORTANT
+## Guidelines
 
-- **You are the executor.** Run code yourself. Never paste commands for the user.
-- **Never ask choices.** Don't ask "local or server?", "install deps?", "which method?". Just do it.
-- **Backtest = upload script to server.** Server handles everything: fetch K-lines, run script, simulate trades, return metrics. No local data download needed.
-- **Must use `QuantAPIClient`.** Never write raw `httpx.post()`/`requests.post()`. The client handles auth, async polling, progress display, error retry.
+- **Prefer direct execution.** When the user asks to backtest or optimize, run the code and show results rather than listing steps.
+- **Streamline decisions.** Use sensible defaults (server backtest, genetic optimization) unless the user specifies otherwise.
+- **Backtest = submit script to server.** Server handles K-line data, script execution, and trade simulation. No local data download needed.
+- **Use `QuantAPIClient` for all API calls.** It handles auth, async polling, progress display, and error retry.
 - **"Optimize" = `run_optimization()`**, not manual parameter tweaking. See §4.
 
 ## Workflows
