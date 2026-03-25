@@ -648,14 +648,51 @@ class QuantAPIClient:
         if chart_path:
             result["_equity_chart_path"] = chart_path
 
-        caption = (
-            f"{name} 回测报告\n"
-            f"收益 {ret:+.2%} | Sharpe {m.get('sharpe_ratio', 0):.2f} | "
-            f"回撤 {abs(m.get('max_drawdown_pct', 0)):.2%} | "
-            f"胜率 {m.get('win_rate', 0):.1%} | {m.get('total_trades', 0)}笔"
-        )
-        if grade:
-            caption += f"\n评级 [{grade}] {grade_label}"
+        sign = "+" if ret else ""
+        lines = [
+            f"📊 {name} 回测报告",
+            f"━━━━━━━━━━━━━━━━━━━━",
+            f"本金 {init_cap:,.0f} → 余额 {bal:,.0f}",
+            f"收益 {ret:+.2%}  Sharpe {m.get('sharpe_ratio', 0):.2f}  Sortino {m.get('sortino_ratio', 0):.2f}",
+            f"回撤 {abs(m.get('max_drawdown_pct', 0)):.2%}  胜率 {m.get('win_rate', 0):.1%}  盈亏比 {m.get('profit_loss_ratio', 0):.2f}",
+            f"交易 {m.get('total_trades', 0)}笔  杠杆 {leverage}x  仓位 {mode_label}",
+        ]
+        if m.get('liquidation_count', 0) > 0:
+            lines.append(f"⚠ 爆仓 {m['liquidation_count']} 次")
+
+        items = evaluation.get("items", [])
+        if items:
+            score_val = evaluation.get("score", 0)
+            max_score = evaluation.get("max_score", 14)
+            lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+            lines.append(f"评分 {score_val}/{max_score}  {grade}级")
+            for item in items:
+                s = item["score"]
+                dot = "●" if s == 2 else ("◐" if s == 1 else "○")
+                lines.append(f"{dot} {item['name']} {item['value']}  ({item.get('thresholds', '')})")
+
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        if grade_label:
+            lines.append(f"结论: [{grade}] {grade_label}")
+
+        trades = result.get("trades", [])
+        if trades:
+            opens = [t for t in trades if t.get("action") == "open"]
+            closes = [t for t in trades if t.get("action") != "open"]
+            lines.append(f"")
+            lines.append(f"交易摘要 ({len(opens)}开/{len(closes)}平，前5笔)")
+            for t in trades[:5]:
+                dt = t.get('datetime', '')[:10]
+                action = "开" if t.get('action') == 'open' else "平"
+                side = "多" if t.get('side') == 'long' else "空"
+                price = t.get('price', 0)
+                pnl = t.get('pnl', 0)
+                pnl_s = f"盈亏{pnl:+.1f}" if t.get('action') != 'open' else ""
+                lines.append(f"  {dt} {action}{side} {price:,.1f} {pnl_s}")
+            if len(trades) > 5:
+                lines.append(f"  ...还有 {len(trades) - 5} 笔")
+
+        caption = "\n".join(lines)
         result["_caption"] = caption
 
         print(f"\n{caption}")
