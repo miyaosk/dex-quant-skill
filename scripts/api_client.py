@@ -753,40 +753,50 @@ class QuantAPIClient:
         GRAY = "#aaaaaa"
         color = GREEN if final_val >= initial_capital else RED
 
-        fig = plt.figure(figsize=(12, 9), facecolor=BG)
-        gs = GridSpec(3, 2, figure=fig, height_ratios=[0.8, 3, 0.6],
-                      hspace=0.3, wspace=0.3,
-                      left=0.08, right=0.95, top=0.93, bottom=0.06)
-
-        # ── 顶部: 策略名 + 核心指标 ──
-        ax_header = fig.add_subplot(gs[0, :])
-        ax_header.set_facecolor(BG)
-        ax_header.axis("off")
-
         grade = evaluation.get("grade", "")
         grade_label = evaluation.get("grade_label", "")
         score = evaluation.get("score", 0)
         max_score = evaluation.get("max_score", 14)
+        items = evaluation.get("items", [])
+
+        has_score = bool(items)
+        fig = plt.figure(figsize=(12, 11 if has_score else 8), facecolor=BG)
+        gs = GridSpec(3, 1, figure=fig,
+                      height_ratios=[0.6, 2.5, 1.8] if has_score else [0.6, 3, 0.1],
+                      hspace=0.25,
+                      left=0.08, right=0.95, top=0.95, bottom=0.04)
+
+        # ── 顶部: 策略名 + 核心指标卡片 ──
+        ax_header = fig.add_subplot(gs[0])
+        ax_header.set_facecolor(BG)
+        ax_header.axis("off")
 
         title = strategy_name or "Backtest Report"
         sign = "+" if ret_pct >= 0 else ""
-        header_line1 = f"{title}"
-        header_line2 = (
-            f"Capital {initial_capital:,.0f} → {final_val:,.0f}  ({sign}{ret_pct:.2f}%)    "
-            f"Sharpe {metrics.get('sharpe_ratio', 0):.2f}    "
-            f"MaxDD {abs(metrics.get('max_drawdown_pct', 0)):.2%}    "
-            f"WinRate {metrics.get('win_rate', 0):.1%}    "
-            f"Trades {metrics.get('total_trades', 0)}    "
-            f"{leverage}x {mode_label}"
-        )
+        ret_color = GREEN if ret_pct >= 0 else RED
 
-        ax_header.text(0.5, 0.7, header_line1, transform=ax_header.transAxes,
-                       fontsize=16, color=WHITE, weight="bold", ha="center", va="center")
-        ax_header.text(0.5, 0.2, header_line2, transform=ax_header.transAxes,
-                       fontsize=10, color=GRAY, ha="center", va="center", family="monospace")
+        ax_header.text(0.5, 0.75, title, transform=ax_header.transAxes,
+                       fontsize=18, color=WHITE, weight="bold", ha="center", va="center")
 
-        # ── 中部左: 资金曲线 ──
-        ax_chart = fig.add_subplot(gs[1, :])
+        kpi_parts = [
+            (f"{sign}{ret_pct:.2f}%", "收益", ret_color),
+            (f"{metrics.get('sharpe_ratio', 0):.2f}", "Sharpe", GRAY),
+            (f"{abs(metrics.get('max_drawdown_pct', 0)):.2%}", "回撤", GRAY),
+            (f"{metrics.get('win_rate', 0):.1%}", "胜率", GRAY),
+            (f"{metrics.get('profit_loss_ratio', 0):.2f}", "盈亏比", GRAY),
+            (f"{metrics.get('total_trades', 0)}", "交易", GRAY),
+            (f"{leverage}x", mode_label, GRAY),
+        ]
+        n = len(kpi_parts)
+        for i, (val, label, c) in enumerate(kpi_parts):
+            x = (i + 0.5) / n
+            ax_header.text(x, 0.30, val, transform=ax_header.transAxes,
+                           fontsize=13, color=c, weight="bold", ha="center", va="center")
+            ax_header.text(x, 0.05, label, transform=ax_header.transAxes,
+                           fontsize=9, color=GRAY, ha="center", va="center")
+
+        # ── 中部: 资金曲线 ──
+        ax_chart = fig.add_subplot(gs[1])
         ax_chart.set_facecolor(PANEL)
         ax_chart.plot(dates, equities, color=color, linewidth=1.5, zorder=3)
         ax_chart.fill_between(dates, equities, initial_capital, alpha=0.15, color=color, zorder=2)
@@ -801,6 +811,10 @@ class QuantAPIClient:
                           textcoords="offset points", xytext=(5, -15),
                           fontsize=8, color=RED, weight="bold")
 
+        ax_chart.set_title(
+            f"Capital  {initial_capital:,.0f} → {final_val:,.0f}",
+            fontsize=10, color=GRAY, loc="left", pad=6,
+        )
         ax_chart.tick_params(colors=GRAY, labelsize=9)
         ax_chart.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:,.0f}"))
         if isinstance(dates[0], datetime):
@@ -811,33 +825,63 @@ class QuantAPIClient:
         for spine in ax_chart.spines.values():
             spine.set_color("#333333")
 
-        # ── 底部左: 评分卡 ──
-        ax_score = fig.add_subplot(gs[2, 0])
-        ax_score.set_facecolor(BG)
-        ax_score.axis("off")
+        # ── 底部: 评分卡 + 结论 ──
+        ax_report = fig.add_subplot(gs[2])
+        ax_report.set_facecolor(BG)
+        ax_report.axis("off")
 
-        items = evaluation.get("items", [])
-        if items:
-            score_parts = []
-            for item in items:
-                s = item["score"]
-                dot = "●" if s == 2 else ("◐" if s == 1 else "○")
-                score_parts.append(f"{dot}{item['name']}")
-            score_text = f"Grade {grade} ({score}/{max_score})  " + "  ".join(score_parts)
-            ax_score.text(0.0, 0.5, score_text, transform=ax_score.transAxes,
-                          fontsize=9, color=GRAY, va="center", family="monospace")
-
-        # ── 底部右: 结论 ──
-        ax_conclusion = fig.add_subplot(gs[2, 1])
-        ax_conclusion.set_facecolor(BG)
-        ax_conclusion.axis("off")
-
-        if grade_label:
+        if has_score:
+            bar_filled = score / max_score
             conclusion_color = GREEN if grade in ("A", "B") else (YELLOW if grade == "C" else RED)
-            ax_conclusion.text(1.0, 0.5, f"[{grade}] {grade_label}",
-                               transform=ax_conclusion.transAxes,
-                               fontsize=11, color=conclusion_color, weight="bold",
-                               ha="right", va="center")
+
+            ax_report.text(0.0, 0.92, f"策略评分  {score}/{max_score}  [{grade}级]",
+                           transform=ax_report.transAxes,
+                           fontsize=14, color=WHITE, weight="bold", va="top")
+
+            bar_y = 0.82
+            bar_h = 0.04
+            from matplotlib.patches import FancyBboxPatch
+            bg_bar = FancyBboxPatch((0.0, bar_y), 1.0, bar_h, transform=ax_report.transAxes,
+                                    boxstyle="round,pad=0.005", facecolor="#2a2a4a", edgecolor="none")
+            ax_report.add_patch(bg_bar)
+            if bar_filled > 0:
+                fill_bar = FancyBboxPatch((0.0, bar_y), bar_filled, bar_h, transform=ax_report.transAxes,
+                                         boxstyle="round,pad=0.005", facecolor=conclusion_color, edgecolor="none")
+                ax_report.add_patch(fill_bar)
+
+            row_y = 0.68
+            row_h = 0.12
+            cols = min(len(items), 4)
+            rows_needed = (len(items) + cols - 1) // cols
+
+            for idx, item in enumerate(items):
+                s = item["score"]
+                dot_color = GREEN if s == 2 else (YELLOW if s == 1 else RED)
+                dot = "●" if s == 2 else ("◐" if s == 1 else "○")
+
+                r = idx // cols
+                c = idx % cols
+                x = c / cols + 0.02
+                y = row_y - r * row_h
+
+                ax_report.text(x, y, dot, transform=ax_report.transAxes,
+                               fontsize=12, color=dot_color, va="center")
+                ax_report.text(x + 0.03, y, f"{item['name']}  {item['value']}",
+                               transform=ax_report.transAxes,
+                               fontsize=11, color=WHITE, va="center")
+                ax_report.text(x + 0.03, y - 0.06, item.get("thresholds", ""),
+                               transform=ax_report.transAxes,
+                               fontsize=8, color=GRAY, va="center")
+
+            conclusion_y = row_y - rows_needed * row_h - 0.04
+            ax_report.add_patch(FancyBboxPatch(
+                (0.0, conclusion_y - 0.06), 1.0, 0.12, transform=ax_report.transAxes,
+                boxstyle="round,pad=0.01", facecolor="#1e2a4a", edgecolor=conclusion_color, linewidth=1.5,
+            ))
+            ax_report.text(0.5, conclusion_y, f"[{grade}]  {grade_label}",
+                           transform=ax_report.transAxes,
+                           fontsize=13, color=conclusion_color, weight="bold",
+                           ha="center", va="center")
 
         if not output_dir:
             output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "output")
