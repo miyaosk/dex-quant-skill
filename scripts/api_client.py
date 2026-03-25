@@ -28,7 +28,9 @@ Skill 端调用流程:
 
 from __future__ import annotations
 
+import os
 import time as _time
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -654,7 +656,13 @@ class QuantAPIClient:
         print(f"{'━' * 56}")
 
         QuantAPIClient._print_evaluation(evaluation)
-        QuantAPIClient._print_equity_chart(result.get("equity_curve", []), init_cap)
+        chart_path = QuantAPIClient._print_equity_chart(
+            result.get("equity_curve", []),
+            init_cap,
+            strategy_name=result.get("strategy_name", ""),
+        )
+        if chart_path:
+            result["_equity_chart_path"] = chart_path
         QuantAPIClient._print_trade_details(result.get("trades", []), leverage, mode_label)
 
     @staticmethod
@@ -684,92 +692,90 @@ class QuantAPIClient:
         print()
 
     @staticmethod
-    def _print_equity_chart(equity_curve: list, initial_capital: float, width: int = 60, height: int = 15) -> None:
-        """ASCII 折线图：资金变化"""
+    def _print_equity_chart(
+        equity_curve: list,
+        initial_capital: float,
+        strategy_name: str = "",
+        output_dir: str = "",
+    ) -> str | None:
+        """生成资金曲线 PNG 图片，返回文件路径。"""
         if not equity_curve or len(equity_curve) < 2:
-            return
+            return None
 
-        raw_values = [e.get("equity", initial_capital) for e in equity_curve]
-        dates = [e.get("datetime", "") for e in equity_curve]
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            from datetime import datetime
+        except ImportError:
+            print("  ⚠ matplotlib 未安装，跳过图表生成 (pip install matplotlib)")
+            return None
 
-        step = max(1, len(raw_values) // width)
-        sampled = [raw_values[i * step] for i in range(min(width, len(raw_values) // step))]
-        if not sampled:
-            sampled = raw_values[:width]
+        equities = [e.get("equity", initial_capital) for e in equity_curve]
+        raw_dates = [e.get("datetime", "") for e in equity_curve]
+        try:
+            dates = [datetime.fromisoformat(d.replace("Z", "+00:00")) if "T" in d
+                     else datetime.strptime(d[:19], "%Y-%m-%d %H:%M:%S") for d in raw_dates]
+        except Exception:
+            dates = list(range(len(equities)))
 
-        lo, hi = min(sampled), max(sampled)
-        if hi == lo:
-            hi = lo + 1
+        hi_val, lo_val = max(equities), min(equities)
+        hi_idx = equities.index(hi_val)
+        lo_idx = equities.index(lo_val)
+        final_val = equities[-1]
+        ret_pct = (final_val - initial_capital) / initial_capital * 100
 
-        rows = [[" "] * len(sampled) for _ in range(height + 1)]
-        prev_row = None
-        for col, v in enumerate(sampled):
-            row = round((v - lo) / (hi - lo) * height)
-            row = max(0, min(height, row))
+        fig, ax = plt.subplots(figsize=(12, 5))
+        fig.patch.set_facecolor("#1a1a2e")
+        ax.set_facecolor("#16213e")
 
-            if prev_row is not None:
-                if row > prev_row:
-                    for r in range(prev_row + 1, row):
-                        rows[r][col] = "│"
-                    rows[row][col] = "╭" if col > 0 else "•"
-                    if rows[prev_row][col] == " ":
-                        rows[prev_row][col] = "╰"
-                elif row < prev_row:
-                    for r in range(row + 1, prev_row):
-                        rows[r][col] = "│"
-                    rows[row][col] = "╮" if col > 0 else "•"
-                    if rows[prev_row][col] == " ":
-                        rows[prev_row][col] = "╯"
-                else:
-                    rows[row][col] = "─"
-            else:
-                rows[row][col] = "•"
-            prev_row = row
+        color = "#00d4aa" if final_val >= initial_capital else "#ff6b6b"
+        ax.plot(dates, equities, color=color, linewidth=1.5, zorder=3)
+        ax.fill_between(dates, equities, initial_capital, alpha=0.15, color=color, zorder=2)
 
-        cap_row = round((initial_capital - lo) / (hi - lo) * height)
-        cap_row = max(0, min(height, cap_row))
+        ax.axhline(y=initial_capital, color="#ffffff", linewidth=0.8, linestyle="--", alpha=0.4, zorder=1)
 
-        print(f"\n  📈 资金变化 ({dates[0][:10]} → {dates[-1][:10]})")
-        print(f"     最高 {hi:>,.0f}  最低 {lo:>,.0f}  本金 {initial_capital:>,.0f}")
-        print()
+        ax.plot(dates[hi_idx], hi_val, "^", color="#00d4aa", markersize=8, zorder=4)
+        ax.annotate(f"High {hi_val:,.0f}", (dates[hi_idx], hi_val),
+                    textcoords="offset points", xytext=(5, 10),
+                    fontsize=8, color="#00d4aa", weight="bold")
 
-        y_labels = 5
-        for r in range(height, -1, -1):
-            if r % max(1, height // y_labels) == 0 or r == height or r == 0:
-                val = lo + (hi - lo) * r / height
-                label = f"  {val:>10,.0f} │"
-            else:
-                label = f"  {'':>10} │"
+        ax.plot(dates[lo_idx], lo_val, "v", color="#ff6b6b", markersize=8, zorder=4)
+        ax.annotate(f"Low {lo_val:,.0f}", (dates[lo_idx], lo_val),
+                    textcoords="offset points", xytext=(5, -15),
+                    fontsize=8, color="#ff6b6b", weight="bold")
 
-            line_chars = []
-            for col in range(len(sampled)):
-                ch = rows[r][col]
-                if ch != " ":
-                    line_chars.append(ch)
-                elif r == cap_row:
-                    line_chars.append("┄")
-                else:
-                    line_chars.append(" ")
+        title = strategy_name or "Equity Curve"
+        sign = "+" if ret_pct >= 0 else ""
+        ax.set_title(f"{title}  |  {initial_capital:,.0f} → {final_val:,.0f} ({sign}{ret_pct:.2f}%)",
+                     color="white", fontsize=13, weight="bold", pad=12)
 
-            print(f"{label}{''.join(line_chars)}")
+        ax.tick_params(colors="#aaaaaa", labelsize=9)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+        if isinstance(dates[0], datetime):
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            fig.autofmt_xdate(rotation=30)
+        ax.grid(True, alpha=0.15, color="#ffffff")
+        for spine in ax.spines.values():
+            spine.set_color("#333333")
 
-        axis = f"  {'':>10} └{'─' * len(sampled)}"
-        print(axis)
+        plt.tight_layout()
 
-        first_dt = dates[0][:7] if dates[0] else ""
-        q1_idx = len(dates) // 4
-        mid_idx = len(dates) // 2
-        q3_idx = len(dates) * 3 // 4
-        last_dt = dates[-1][:7] if dates[-1] else ""
-        q1_dt = dates[q1_idx][:7] if q1_idx < len(dates) else ""
-        mid_dt = dates[mid_idx][:7] if mid_idx < len(dates) else ""
-        q3_dt = dates[q3_idx][:7] if q3_idx < len(dates) else ""
+        if not output_dir:
+            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "output")
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        w = len(sampled)
-        seg = w // 4
-        ruler = f"{first_dt:<{seg}}{q1_dt:<{seg}}{mid_dt:<{seg}}{q3_dt:<{seg}}{last_dt}"
-        print(f"  {'':>11} {ruler}")
-        print()
+        safe_name = (strategy_name or "equity").replace(" ", "_").replace("/", "_")[:30]
+        ts = int(_time.time())
+        filepath = os.path.join(output_dir, f"{safe_name}_{ts}.png")
+
+        fig.savefig(filepath, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
+        plt.close(fig)
+
+        print(f"\n  📈 资金曲线已保存: {filepath}")
+        return filepath
 
     @staticmethod
     def _print_trade_details(trades: list, default_leverage: int = 1, mode_label: str = "逐仓", limit: int = 30) -> None:

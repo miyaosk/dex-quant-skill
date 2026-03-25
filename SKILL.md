@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.0.2
+version: 3.1.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -22,6 +22,11 @@ python3 -c "import httpx, loguru" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_D
 ```
 
 If `NEEDS_DEPS`: run `pip3 install httpx loguru 2>/dev/null || pip install httpx loguru 2>/dev/null || python3 -m pip install httpx loguru 2>/dev/null`. If all fail, tell user to install manually and **STOP**.
+
+Also ensure `matplotlib` is installed (for equity chart PNG):
+```bash
+python3 -c "import matplotlib" 2>/dev/null || pip3 install matplotlib 2>/dev/null
+```
 
 ## Workflow routing
 
@@ -253,8 +258,9 @@ client.print_metrics(bt)
 - **You MUST call `client.print_metrics(bt)` in the code block and show its raw terminal output.** This function prints:
   1. 绩效总览卡片（本金/余额/收益/Sharpe/回撤/胜率/杠杆/仓位）
   2. 📊 策略评分卡（7项指标逐项🟢🟡🔴评分 + ABCDF等级）
-  3. 📈 ASCII 资金折线图（equity curve）
+  3. 📈 资金曲线 PNG 图片（保存到 `{baseDir}/output/` 目录，控制台输出文件路径）
   4. 📋 交易明细表（每笔的杠杆/仓位模式/保证金/盈亏）
+- **图片展示:** `print_metrics()` 会生成 PNG 图片并打印路径。你 **MUST** 在回复中展示该图片（用 markdown `![](filepath)` 或平台的图片发送功能）。如果路径打印了但用户没看到图，主动发送该文件。
 - **NEVER manually format or summarize the metrics yourself.** The print_metrics() output IS the report. Show it as-is.
 - **NEVER skip the chart or trade details.** If they don't appear, something is wrong — debug it.
 - `print_trades(bt)` prints detailed table (leverage, margin mode, margin used per trade) — only needed if user asks for more trades beyond the default 30.
@@ -465,7 +471,7 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Run strategy script locally for backtest | Server runs it | `submit_backtest(script_content=...)` |
 | `import os/subprocess/socket` in strategy | Sandbox blocks them | Only `sys`, `numpy`, `data_client`, `indicators` |
 | `df.rolling()`, `df.shift()`, `df.apply()` | Server pandas restricted | Use `ind.ema()`, `ind.sma()` etc. |
-| Install numpy/pandas for backtest | Server has them | Only `httpx loguru` locally |
+| Install numpy/pandas for backtest | Server has them | Only `httpx loguru matplotlib` locally |
 | Build local backtest engine | Server already has one | Use `submit_backtest()` |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | Manually tweak params + re-backtest | That's guessing | Use §3 `run_optimization()` |
@@ -485,4 +491,4 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 7. **`lookback` covers longest indicator.** EMA(60) → at least 61 bars warmup.
 8. **Descriptive filenames.** `btc_ema_cross_strategy.py`, not `strategy1.py`.
 9. **One strategy per file.** Never bundle.
-10. **Don't install heavy deps for backtest.** Only `httpx` and `loguru` locally.
+10. **Local deps: `httpx`, `loguru`, `matplotlib`.** Don't install numpy/pandas — server has them.
