@@ -710,7 +710,7 @@ class QuantAPIClient:
             lines.append(f"")
             lines.append(f"📝 交易摘要 ({len(opens)}开/{len(closes)}平，前5笔)")
             for t in trades[:5]:
-                dt = t.get('datetime', '')[:10]
+                dt = t.get('datetime', '')[:16].replace('T', ' ')
                 action = "开" if t.get('action') == 'open' else "平"
                 side = "多" if t.get('side') == 'long' else "空"
                 price = t.get('price', 0)
