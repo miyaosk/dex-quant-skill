@@ -704,13 +704,23 @@ class QuantAPIClient:
 
         try:
             import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-            import matplotlib.dates as mdates
-            from datetime import datetime
         except ImportError:
-            print("  ⚠ matplotlib 未安装，跳过图表生成 (pip install matplotlib)")
-            return None
+            print("  ⏳ 正在安装 matplotlib ...", flush=True)
+            import subprocess, sys
+            try:
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", "-q", "matplotlib"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                import matplotlib
+            except Exception:
+                print("  ⚠ matplotlib 安装失败，跳过图表生成")
+                return None
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        from datetime import datetime
 
         equities = [e.get("equity", initial_capital) for e in equity_curve]
         raw_dates = [e.get("datetime", "") for e in equity_curve]
