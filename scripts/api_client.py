@@ -614,85 +614,26 @@ class QuantAPIClient:
 
     @staticmethod
     def print_metrics(result: dict) -> None:
-        """格式化打印回测结果（含结论 + 评分 + 资金曲线 + 交易摘要）
+        """生成回测报告图片并打印 caption + 文件路径。
 
-        输出紧凑格式，适合 Telegram 等消息平台直接转发。
-        完整交易明细请用 print_trades(result)。
+        所有指标、评分、资金曲线合并到一张 PNG 中。
+        AI 只需发送这一张图片（附带 caption），无需单独发文字。
         """
         if result.get("status") != "completed":
             print(f"回测失败: {result.get('error', '未知错误')}")
             return
 
         m = result.get("metrics", {})
-        conclusion = result.get("conclusion", "")
-        conclusion_map = {
-            "approved": "✅ 通过",
-            "paper_trade_first": "⚠️ 先模拟",
-            "rejected": "❌ 驳回",
-        }
-
         ret = m.get('total_return_pct', 0)
         bal = m.get('final_balance', 0)
         init_cap = m.get('initial_capital', 100000)
         margin_mode = result.get('margin_mode', 'isolated')
         leverage = result.get('leverage', m.get('leverage', 1))
         mode_label = "逐仓" if margin_mode == "isolated" else "全仓"
-
         evaluation = m.get('evaluation', {})
         grade = evaluation.get('grade', '')
         grade_label = evaluation.get('grade_label', '')
-
-        title_suffix = conclusion_map.get(conclusion, conclusion)
-        if grade:
-            title_suffix = f"[{grade}级] {grade_label}"
-
         name = result.get('strategy_name', '策略')
-        lines = [
-            f"{'━' * 40}",
-            f"  {name}  {title_suffix}",
-            f"{'━' * 40}",
-            f"  本金 {init_cap:,.0f}  余额 {bal:,.0f}  收益 {ret:+.2%}",
-            f"  Sharpe {m.get('sharpe_ratio', 0):.2f}  Sortino {m.get('sortino_ratio', 0):.2f}  盈亏比 {m.get('profit_loss_ratio', 0):.2f}",
-            f"  回撤 {abs(m.get('max_drawdown_pct', 0)):.2%}  胜率 {m.get('win_rate', 0):.1%}  交易 {m.get('total_trades', 0)}笔",
-            f"  杠杆 {leverage}x  仓位 {mode_label}",
-        ]
-        if m.get('liquidation_count', 0) > 0:
-            lines.append(f"  ⚠ 爆仓 {m['liquidation_count']} 次")
-
-        if evaluation and evaluation.get("items"):
-            items = evaluation["items"]
-            score = evaluation.get("score", 0)
-            max_score = evaluation.get("max_score", 14)
-            bar = "█" * score + "░" * (max_score - score)
-            lines.append(f"{'─' * 40}")
-            lines.append(f"  📊 评分 {score}/{max_score} [{bar}] {grade}级")
-            for item in items:
-                s = item["score"]
-                icon = "🟢" if s == 2 else ("🟡" if s == 1 else "🔴")
-                lines.append(f"  {icon} {item['name']:<4} {item['value']:>8} {s}/{item['max']}")
-            lines.append(f"  结论: {grade_label}")
-
-        trades = result.get("trades", [])
-        if trades:
-            opens = [t for t in trades if t.get("action") == "open"]
-            closes = [t for t in trades if t.get("action") != "open"]
-            lines.append(f"{'─' * 40}")
-            lines.append(f"  📋 交易 {len(opens)}开/{len(closes)}平 (显示前5笔)")
-            for t in trades[:5]:
-                dt = t.get('datetime', '')[:10]
-                action = "开" if t.get('action') == 'open' else "平"
-                side = "多" if t.get('side') == 'long' else "空"
-                price = t.get('price', 0)
-                pnl = t.get('pnl', 0)
-                pnl_s = f"{pnl:+.1f}" if t.get('action') != 'open' else "—"
-                lines.append(f"  {dt} {action}{side} {price:,.1f} 盈亏{pnl_s}")
-            if len(trades) > 5:
-                lines.append(f"  ... 还有 {len(trades) - 5} 笔")
-
-        lines.append(f"{'━' * 40}")
-
-        report = "\n".join(lines)
-        print(f"\n{report}")
 
         chart_path = QuantAPIClient._print_equity_chart(
             result.get("equity_curve", []),
@@ -707,7 +648,20 @@ class QuantAPIClient:
         if chart_path:
             result["_equity_chart_path"] = chart_path
 
-        print("\n⬆ 以上为回测报告，请将图片作为附件发送给用户。")
+        caption = (
+            f"{name} 回测报告\n"
+            f"收益 {ret:+.2%} | Sharpe {m.get('sharpe_ratio', 0):.2f} | "
+            f"回撤 {abs(m.get('max_drawdown_pct', 0)):.2%} | "
+            f"胜率 {m.get('win_rate', 0):.1%} | {m.get('total_trades', 0)}笔"
+        )
+        if grade:
+            caption += f"\n评级 [{grade}] {grade_label}"
+        result["_caption"] = caption
+
+        print(f"\n{caption}")
+        if chart_path:
+            print(f"\n📊 报告图片: {chart_path}")
+            print(f"👉 请将此图片作为附件发送，caption 用上面的文字")
 
     @staticmethod
     def _print_evaluation(evaluation: dict) -> None:

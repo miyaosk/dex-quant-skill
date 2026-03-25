@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.3.0
+version: 3.3.1
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -206,13 +206,11 @@ else:
     print(f"❌ 回测失败: {bt.get('error', '')}")
 ```
 
-**⚠ 代码执行后你 MUST 这样回复（不是建议，是必须）：**
-1. 把终端输出的 `━━━` 之间的**全部文本原样粘贴**到消息里（不要改写、不要总结、不要省略任何行）
-2. 读取 `bt["_equity_chart_path"]` 的 PNG 文件，**作为图片附件发送**（不是路径，不是 markdown）
-3. 最后加一句基于等级的建议
-
-❌ 错误示范：只发图 + "收益 -4.04%, Sharpe -1.25"（这是总结，不是报告）
-✅ 正确示范：粘贴完整终端输出文本 + 发送图片附件
+**⚠ 代码执行后你 MUST 这样回复：**
+1. 读取 `bt["_equity_chart_path"]` 的 PNG 文件
+2. 用 `bt["_caption"]` 的文字作为图片 caption
+3. **只发一条图片附件消息**（caption 里已包含关键指标）
+4. 不要单独发文字消息（会被系统 heartbeat 吞掉）
 
 If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
 
@@ -236,9 +234,9 @@ client.print_metrics(bt)
 ```
 
 **⚠ 代码执行后你 MUST 这样回复：**
-1. 把 `━━━` 之间的**全部终端输出原样粘贴**（不改写、不总结）
-2. 读取 PNG 文件**作为图片附件发送**
-3. 加一句等级建议
+1. 读取 `bt["_equity_chart_path"]` 的 PNG 文件
+2. 用 `bt["_caption"]` 作为图片 caption
+3. **只发一条图片附件消息**（不要单独发文字，会被 heartbeat 吞掉）
 
 ### Backtest parameters
 
@@ -476,9 +474,7 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Build local backtest engine | Server already has one | Use `submit_backtest()` |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | Manually tweak params + re-backtest | That's guessing | Use §3 `run_optimization()` |
-| Summarize metrics in your own words | User needs complete report not a summary | 原样粘贴 `print_metrics()` 全部终端输出（4个部分） |
-| Skip equity chart or trade details | Report is incomplete without them | 粘贴全部文本 + 图片作为附件发送 |
-| Only send chart image without text report | Report has 4 parts, image is only 1 of them | 文本(绩效+评分+交易) + 图片附件 = 完整报告 |
+| Send text and image as separate messages | Heartbeat will delete the text message | 只发一条图片附件（caption 含指标摘要） |
 | Use `![](path)` for chart image | Telegram can't render local paths | 用平台的文件/图片发送功能作为附件发送 |
 
 ---
