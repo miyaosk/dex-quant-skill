@@ -828,10 +828,25 @@ class QuantAPIClient:
 
         equities = [e.get("equity", initial_capital) for e in equity_curve]
         raw_dates = [e.get("datetime", "") for e in equity_curve]
-        try:
-            dates = [datetime.fromisoformat(d.replace("Z", "+00:00")) if "T" in d
-                     else datetime.strptime(d[:19], "%Y-%m-%d %H:%M:%S") for d in raw_dates]
-        except Exception:
+        dates = []
+        for d in raw_dates:
+            if not d:
+                dates = None
+                break
+            try:
+                if "T" in d:
+                    dates.append(datetime.fromisoformat(d.replace("Z", "+00:00").replace("+00:00", "")))
+                elif len(d) >= 19:
+                    dates.append(datetime.strptime(d[:19], "%Y-%m-%d %H:%M:%S"))
+                elif len(d) >= 10:
+                    dates.append(datetime.strptime(d[:10], "%Y-%m-%d"))
+                else:
+                    dates = None
+                    break
+            except Exception:
+                dates = None
+                break
+        if dates is None or len(dates) != len(equities):
             dates = list(range(len(equities)))
 
         hi_val, lo_val = max(equities), min(equities)
@@ -923,9 +938,15 @@ class QuantAPIClient:
         ax_chart.tick_params(colors=GRAY, labelsize=10)
         ax_chart.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:,.0f}"))
         if isinstance(dates[0], datetime):
+            span_days = (dates[-1] - dates[0]).days
+            if span_days > 180:
+                ax_chart.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
+            elif span_days > 60:
+                ax_chart.xaxis.set_major_locator(mdates.MonthLocator())
+            else:
+                ax_chart.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
             ax_chart.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-            ax_chart.xaxis.set_major_locator(mdates.AutoDateLocator())
-            fig.autofmt_xdate(rotation=30)
+            plt.setp(ax_chart.get_xticklabels(), rotation=30, ha="right")
         ax_chart.grid(True, alpha=0.12, color=WHITE)
         for spine in ax_chart.spines.values():
             spine.set_color("#2a3050")
