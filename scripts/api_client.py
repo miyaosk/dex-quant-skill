@@ -614,7 +614,11 @@ class QuantAPIClient:
 
     @staticmethod
     def print_metrics(result: dict) -> None:
-        """格式化打印回测结果（含结论 + 资金曲线 + 交易明细）"""
+        """格式化打印回测结果（含结论 + 评分 + 资金曲线 + 交易摘要）
+
+        输出紧凑格式，适合 Telegram 等消息平台直接转发。
+        完整交易明细请用 print_trades(result)。
+        """
         if result.get("status") != "completed":
             print(f"回测失败: {result.get('error', '未知错误')}")
             return
@@ -637,33 +641,68 @@ class QuantAPIClient:
         evaluation = m.get('evaluation', {})
         grade = evaluation.get('grade', '')
         grade_label = evaluation.get('grade_label', '')
-        score = evaluation.get('score', 0)
-        max_score = evaluation.get('max_score', 14)
 
         title_suffix = conclusion_map.get(conclusion, conclusion)
         if grade:
             title_suffix = f"[{grade}级] {grade_label}"
 
-        print(f"\n{'━' * 56}")
-        print(f"  {result.get('strategy_name', '策略')}  {title_suffix}")
-        print(f"{'━' * 56}")
-        print(f"  本金  {init_cap:>,.0f}    余额  {bal:>,.0f}    收益  {ret:>+.2%}")
-        print(f"  Sharpe {m.get('sharpe_ratio', 0):>.2f}    Sortino {m.get('sortino_ratio', 0):>.2f}    盈亏比  {m.get('profit_loss_ratio', 0):>.2f}")
-        print(f"  回撤  {abs(m.get('max_drawdown_pct', 0)):>.2%}    胜率  {m.get('win_rate', 0):>.1%}    交易  {m.get('total_trades', 0)}笔")
-        print(f"  杠杆  {leverage}x        仓位  {mode_label}")
+        name = result.get('strategy_name', '策略')
+        lines = [
+            f"{'━' * 40}",
+            f"  {name}  {title_suffix}",
+            f"{'━' * 40}",
+            f"  本金 {init_cap:,.0f}  余额 {bal:,.0f}  收益 {ret:+.2%}",
+            f"  Sharpe {m.get('sharpe_ratio', 0):.2f}  Sortino {m.get('sortino_ratio', 0):.2f}  盈亏比 {m.get('profit_loss_ratio', 0):.2f}",
+            f"  回撤 {abs(m.get('max_drawdown_pct', 0)):.2%}  胜率 {m.get('win_rate', 0):.1%}  交易 {m.get('total_trades', 0)}笔",
+            f"  杠杆 {leverage}x  仓位 {mode_label}",
+        ]
         if m.get('liquidation_count', 0) > 0:
-            print(f"  ⚠ 爆仓 {m['liquidation_count']} 次")
-        print(f"{'━' * 56}")
+            lines.append(f"  ⚠ 爆仓 {m['liquidation_count']} 次")
 
-        QuantAPIClient._print_evaluation(evaluation)
+        if evaluation and evaluation.get("items"):
+            items = evaluation["items"]
+            score = evaluation.get("score", 0)
+            max_score = evaluation.get("max_score", 14)
+            bar = "█" * score + "░" * (max_score - score)
+            lines.append(f"{'─' * 40}")
+            lines.append(f"  📊 评分 {score}/{max_score} [{bar}] {grade}级")
+            for item in items:
+                s = item["score"]
+                icon = "🟢" if s == 2 else ("🟡" if s == 1 else "🔴")
+                lines.append(f"  {icon} {item['name']:<4} {item['value']:>8} {s}/{item['max']}")
+            lines.append(f"  结论: {grade_label}")
+
+        trades = result.get("trades", [])
+        if trades:
+            opens = [t for t in trades if t.get("action") == "open"]
+            closes = [t for t in trades if t.get("action") != "open"]
+            lines.append(f"{'─' * 40}")
+            lines.append(f"  📋 交易 {len(opens)}开/{len(closes)}平 (显示前5笔)")
+            for t in trades[:5]:
+                dt = t.get('datetime', '')[:10]
+                action = "开" if t.get('action') == 'open' else "平"
+                side = "多" if t.get('side') == 'long' else "空"
+                price = t.get('price', 0)
+                pnl = t.get('pnl', 0)
+                pnl_s = f"{pnl:+.1f}" if t.get('action') != 'open' else "—"
+                lines.append(f"  {dt} {action}{side} {price:,.1f} 盈亏{pnl_s}")
+            if len(trades) > 5:
+                lines.append(f"  ... 还有 {len(trades) - 5} 笔")
+
+        lines.append(f"{'━' * 40}")
+
+        report = "\n".join(lines)
+        print(f"\n{report}")
+
         chart_path = QuantAPIClient._print_equity_chart(
             result.get("equity_curve", []),
             init_cap,
-            strategy_name=result.get("strategy_name", ""),
+            strategy_name=name,
         )
         if chart_path:
             result["_equity_chart_path"] = chart_path
-        QuantAPIClient._print_trade_details(result.get("trades", []), leverage, mode_label)
+
+        print("\n⬆ 以上为完整回测报告，请原样转发给用户，并将图片作为附件发送。")
 
     @staticmethod
     def _print_evaluation(evaluation: dict) -> None:

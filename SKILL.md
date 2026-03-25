@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.1.3
+version: 3.2.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
