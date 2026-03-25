@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.1.2
+version: 3.1.3
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -250,17 +250,33 @@ After `print_metrics()` completes, read `bt["_equity_chart_path"]` and **send th
 | `status: running` after 60s | Poll every 15s, up to 5 minutes |
 | Network error / timeout | Retry once, then report |
 
-### Display rules (CRITICAL)
+### Display rules (CRITICAL — 违反这些规则 = 回测报告不合格)
 
-- **You MUST call `client.print_metrics(bt)` in the code block and show its raw terminal output.** This function prints:
-  1. 绩效总览卡片（本金/余额/收益/Sharpe/回撤/胜率/杠杆/仓位）
-  2. 📊 策略评分卡（7项指标逐项🟢🟡🔴评分 + ABCDF等级）
-  3. 📈 资金曲线 PNG 图片（保存到 `{baseDir}/output/` 目录，控制台输出文件路径）
-  4. 📋 交易明细表（每笔的杠杆/仓位模式/保证金/盈亏）
-- **图片展示 (CRITICAL):** `print_metrics()` 会生成资金曲线 PNG 图片，路径存在 `bt["_equity_chart_path"]` 中。你 **MUST** 将该 PNG 文件作为**图片附件**发送给用户（不是 markdown 引用，不是打印路径）。具体做法：读取该文件，用平台的图片/文件发送功能发出去。**NEVER 只打印路径或只用 `![](path)` — 那样 Telegram 等平台看不到图。**
-- **NEVER manually format or summarize the metrics yourself.** The print_metrics() output IS the report. Show it as-is.
-- **NEVER skip the chart or trade details.** If they don't appear, something is wrong — debug it.
-- `print_trades(bt)` prints detailed table (leverage, margin mode, margin used per trade) — only needed if user asks for more trades beyond the default 30.
+回测完成后，你的回复 **MUST** 包含以下 **全部 4 个部分**，缺一不可：
+
+| # | 内容 | 来源 | 展示方式 |
+|---|------|------|----------|
+| 1 | 绩效总览卡片（本金/余额/收益/Sharpe/回撤/胜率/杠杆/仓位） | `print_metrics()` 终端输出 | **原样粘贴**终端输出文本 |
+| 2 | 📊 策略评分卡（7项指标🟢🟡🔴 + ABCDF等级） | `print_metrics()` 终端输出 | **原样粘贴**终端输出文本 |
+| 3 | 📈 资金曲线图 | `bt["_equity_chart_path"]` PNG 文件 | **作为图片附件发送**（不是 markdown，不是路径） |
+| 4 | 📋 交易明细表（杠杆/仓位模式/保证金/盈亏） | `print_metrics()` 终端输出 | **原样粘贴**终端输出文本 |
+
+**执行顺序：**
+1. 运行代码，调用 `client.print_metrics(bt)`
+2. 将终端输出的 **全部文本**（绩效卡 + 评分卡 + 交易明细）**原样粘贴**到回复中
+3. 读取 `bt["_equity_chart_path"]` 指向的 PNG 文件，**作为图片附件发送**
+4. 最后加一句基于评分等级的建议
+
+**NEVER 做这些：**
+- ❌ 自己用文字总结指标（如"收益 -4.04%, Sharpe -1.25"）— 这是摘要不是报告
+- ❌ 只发图片不发文字报告
+- ❌ 只发文字报告不发图片
+- ❌ 跳过评分卡或交易明细
+- ❌ 用 `![](path)` 引用图片（Telegram 无法渲染本地路径）
+- ❌ 省略 `print_metrics()` 的任何一部分输出
+
+`print_trades(bt)` prints detailed table — only needed if user asks for more trades beyond the default 30.
+
 - After completion, suggest next step **based on grade**:
   - A/B 级 → "效果不错！要优化参数吗？" (→ §3) 或 "可以考虑小仓实盘"
   - C 级 → "及格但不够好，要优化参数还是调整逻辑？"
@@ -472,8 +488,10 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Build local backtest engine | Server already has one | Use `submit_backtest()` |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | Manually tweak params + re-backtest | That's guessing | Use §3 `run_optimization()` |
-| Summarize metrics in your own words | User needs real numbers + chart + scorecard | Show full `print_metrics()` terminal output as-is |
-| Skip equity chart or trade details | User explicitly requested them | Always let `print_metrics()` output everything |
+| Summarize metrics in your own words | User needs complete report not a summary | 原样粘贴 `print_metrics()` 全部终端输出（4个部分） |
+| Skip equity chart or trade details | Report is incomplete without them | 粘贴全部文本 + 图片作为附件发送 |
+| Only send chart image without text report | Report has 4 parts, image is only 1 of them | 文本(绩效+评分+交易) + 图片附件 = 完整报告 |
+| Use `![](path)` for chart image | Telegram can't render local paths | 用平台的文件/图片发送功能作为附件发送 |
 
 ---
 
