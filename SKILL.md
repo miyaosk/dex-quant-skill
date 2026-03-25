@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.2.0
+version: 3.2.1
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -206,6 +206,14 @@ else:
     print(f"❌ 回测失败: {bt.get('error', '')}")
 ```
 
+**⚠ 代码执行后你 MUST 这样回复（不是建议，是必须）：**
+1. 把终端输出的 `━━━` 之间的**全部文本原样粘贴**到消息里（不要改写、不要总结、不要省略任何行）
+2. 读取 `bt["_equity_chart_path"]` 的 PNG 文件，**作为图片附件发送**（不是路径，不是 markdown）
+3. 最后加一句基于等级的建议
+
+❌ 错误示范：只发图 + "收益 -4.04%, Sharpe -1.25"（这是总结，不是报告）
+✅ 正确示范：粘贴完整终端输出文本 + 发送图片附件
+
 If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
 
 ### Quick backtest (single block, for platforms with streaming output)
@@ -227,7 +235,10 @@ bt = client.run_server_backtest(
 client.print_metrics(bt)
 ```
 
-After `print_metrics()` completes, read `bt["_equity_chart_path"]` and **send that PNG file as an image attachment** to the user.
+**⚠ 代码执行后你 MUST 这样回复：**
+1. 把 `━━━` 之间的**全部终端输出原样粘贴**（不改写、不总结）
+2. 读取 PNG 文件**作为图片附件发送**
+3. 加一句等级建议
 
 ### Backtest parameters
 
@@ -250,34 +261,11 @@ After `print_metrics()` completes, read `bt["_equity_chart_path"]` and **send th
 | `status: running` after 60s | Poll every 15s, up to 5 minutes |
 | Network error / timeout | Retry once, then report |
 
-### Display rules (CRITICAL — 违反这些规则 = 回测报告不合格)
+### Display rules
 
-回测完成后，你的回复 **MUST** 包含以下 **全部 4 个部分**，缺一不可：
+`print_trades(bt)` prints full trade table — only needed if user asks for more details.
 
-| # | 内容 | 来源 | 展示方式 |
-|---|------|------|----------|
-| 1 | 绩效总览卡片（本金/余额/收益/Sharpe/回撤/胜率/杠杆/仓位） | `print_metrics()` 终端输出 | **原样粘贴**终端输出文本 |
-| 2 | 📊 策略评分卡（7项指标🟢🟡🔴 + ABCDF等级） | `print_metrics()` 终端输出 | **原样粘贴**终端输出文本 |
-| 3 | 📈 资金曲线图 | `bt["_equity_chart_path"]` PNG 文件 | **作为图片附件发送**（不是 markdown，不是路径） |
-| 4 | 📋 交易明细表（杠杆/仓位模式/保证金/盈亏） | `print_metrics()` 终端输出 | **原样粘贴**终端输出文本 |
-
-**执行顺序：**
-1. 运行代码，调用 `client.print_metrics(bt)`
-2. 将终端输出的 **全部文本**（绩效卡 + 评分卡 + 交易明细）**原样粘贴**到回复中
-3. 读取 `bt["_equity_chart_path"]` 指向的 PNG 文件，**作为图片附件发送**
-4. 最后加一句基于评分等级的建议
-
-**NEVER 做这些：**
-- ❌ 自己用文字总结指标（如"收益 -4.04%, Sharpe -1.25"）— 这是摘要不是报告
-- ❌ 只发图片不发文字报告
-- ❌ 只发文字报告不发图片
-- ❌ 跳过评分卡或交易明细
-- ❌ 用 `![](path)` 引用图片（Telegram 无法渲染本地路径）
-- ❌ 省略 `print_metrics()` 的任何一部分输出
-
-`print_trades(bt)` prints detailed table — only needed if user asks for more trades beyond the default 30.
-
-- After completion, suggest next step **based on grade**:
+After completion, suggest next step **based on grade**:
   - A/B 级 → "效果不错！要优化参数吗？" (→ §3) 或 "可以考虑小仓实盘"
   - C 级 → "及格但不够好，要优化参数还是调整逻辑？"
   - D 级 → "策略需要优化，建议调整入场/出场逻辑后重测"
