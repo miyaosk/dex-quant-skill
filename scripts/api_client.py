@@ -682,26 +682,26 @@ class QuantAPIClient:
             lines.append(f"━━━━━━━━━━━━━━━━━━━━")
 
         if grade_label:
-            lines.append(f"📋 结论: [{grade}] {grade_label}")
+            conclusion_text = f"[{grade}] {grade_label}"
         elif conclusion:
-            lines.append(f"📋 结论: {conclusion_map.get(conclusion, conclusion)}")
+            conclusion_text = conclusion_map.get(conclusion, conclusion)
+        elif ret >= 0 and m.get('sharpe_ratio', 0) > 0.5:
+            conclusion_text = "⚠️ 建议先模拟观察"
+        elif ret < 0:
+            conclusion_text = "❌ 策略亏损，建议优化后重测"
         else:
-            if ret >= 0 and m.get('sharpe_ratio', 0) > 0.5:
-                lines.append("📋 结论: ⚠️ 建议先模拟观察")
-            elif ret < 0:
-                lines.append("📋 结论: ❌ 策略亏损，建议优化后重测")
-            else:
-                lines.append("📋 结论: ⚠️ 收益偏低，建议优化参数")
+            conclusion_text = "⚠️ 收益偏低，建议优化参数"
 
-        lines.append("")
         if ret > 0.2 and m.get('sharpe_ratio', 0) > 1.5:
-            lines.append("💡 建议: 效果不错，可考虑小仓实盘或优化参数")
+            advice = "可考虑小仓实盘或优化参数"
         elif ret > 0:
-            lines.append("💡 建议: 有正收益但不够稳健，建议优化参数后重测")
+            advice = "建议优化参数后重测"
         elif m.get('total_trades', 0) == 0:
-            lines.append("💡 建议: 没有交易信号，入场条件可能太严格")
+            advice = "没有交易信号，入场条件可能太严格"
         else:
-            lines.append("💡 建议: 策略需要调整，可优化参数或重新设计入场/出场逻辑")
+            advice = "可优化参数或重新设计入场/出场逻辑"
+
+        lines.append(f"📋 {conclusion_text}，{advice}")
 
         trades = result.get("trades", [])
         if trades:
