@@ -892,20 +892,13 @@ class QuantAPIClient:
         LIGHT = "#c8cad0"
         color = GREEN if final_val >= initial_capital else RED
 
-        grade = evaluation.get("grade", "")
-        grade_label = evaluation.get("grade_label", "")
-        score_val = evaluation.get("score", 0)
-        max_score = evaluation.get("max_score", 14)
-        items = evaluation.get("items", [])
-        has_score = bool(items)
-
         from matplotlib.patches import FancyBboxPatch
 
-        fig = plt.figure(figsize=(10, 14 if has_score else 9), facecolor=BG)
-        gs = GridSpec(3, 1, figure=fig,
-                      height_ratios=[1.2, 2.5, 2.8] if has_score else [1.2, 3, 0.1],
+        fig = plt.figure(figsize=(10, 7), facecolor=BG)
+        gs = GridSpec(2, 1, figure=fig,
+                      height_ratios=[1, 3],
                       hspace=0.15,
-                      left=0.06, right=0.94, top=0.96, bottom=0.03)
+                      left=0.06, right=0.94, top=0.96, bottom=0.06)
 
         title = strategy_name or "Backtest Report"
         sign = "+" if ret_pct >= 0 else ""
@@ -977,81 +970,6 @@ class QuantAPIClient:
         ax_chart.grid(True, alpha=0.12, color=WHITE)
         for spine in ax_chart.spines.values():
             spine.set_color("#2a3050")
-
-        # ════════ 底部: 评分卡 + 结论 ════════
-        ax_report = fig.add_subplot(gs[2])
-        ax_report.set_facecolor(BG)
-        ax_report.axis("off")
-
-        if has_score:
-            conclusion_color = GREEN if grade in ("A", "B") else (YELLOW if grade == "C" else RED)
-            bar_pct = score_val / max_score
-
-            ax_report.text(0.0, 0.95, "Score", transform=ax_report.transAxes,
-                           fontsize=18, color=WHITE, weight="bold", va="top")
-            ax_report.text(1.0, 0.95, f"{score_val}/{max_score}  {grade}级",
-                           transform=ax_report.transAxes,
-                           fontsize=18, color=conclusion_color, weight="bold",
-                           va="top", ha="right")
-
-            bar_y, bar_h = 0.86, 0.03
-            ax_report.add_patch(FancyBboxPatch(
-                (0.0, bar_y), 1.0, bar_h, transform=ax_report.transAxes,
-                boxstyle="round,pad=0.004", facecolor="#252a3a", edgecolor="none"))
-            if bar_pct > 0:
-                ax_report.add_patch(FancyBboxPatch(
-                    (0.0, bar_y), bar_pct, bar_h, transform=ax_report.transAxes,
-                    boxstyle="round,pad=0.004", facecolor=conclusion_color, edgecolor="none"))
-
-            name_map = {
-                "收益率": "Return", "收益": "Return",
-                "Sharpe": "Sharpe", "夏普": "Sharpe",
-                "最大回撤": "MaxDD", "回撤": "MaxDD",
-                "胜率": "WinRate",
-                "盈亏比": "P/L Ratio",
-                "交易数": "Trades", "交易": "Trades",
-                "爆仓": "Liq",
-            }
-            grade_map = {
-                "优秀策略，可直接实盘": "Excellent — ready for live",
-                "良好策略，建议小仓实盘验证": "Good — paper trade first",
-                "及格策略，建议先模拟观察": "Fair — needs observation",
-                "较差策略，需要优化后再测": "Poor — optimize & retest",
-                "失败策略，建议重新设计": "Failed — redesign strategy",
-            }
-
-            row_y_start = 0.78
-            row_h = 0.10
-            for idx, item in enumerate(items):
-                s = item["score"]
-                ic = GREEN if s == 2 else (YELLOW if s == 1 else RED)
-                y = row_y_start - idx * row_h
-
-                ax_report.add_patch(FancyBboxPatch(
-                    (0.0, y - 0.01), 1.0, row_h - 0.015, transform=ax_report.transAxes,
-                    boxstyle="round,pad=0.008", facecolor=CARD, edgecolor="none"))
-
-                en_name = name_map.get(item["name"], item["name"])
-                dot = "●" if s == 2 else ("◐" if s == 1 else "○")
-                ax_report.text(0.03, y + 0.03, dot, transform=ax_report.transAxes,
-                               fontsize=14, color=ic, va="center")
-                ax_report.text(0.07, y + 0.03, en_name, transform=ax_report.transAxes,
-                               fontsize=13, color=WHITE, va="center", weight="bold")
-                ax_report.text(0.50, y + 0.03, item["value"], transform=ax_report.transAxes,
-                               fontsize=14, color=ic, va="center", weight="bold", ha="center")
-                ax_report.text(0.98, y + 0.03, item.get("thresholds", ""), transform=ax_report.transAxes,
-                               fontsize=10, color=GRAY, va="center", ha="right")
-
-            en_grade_label = grade_map.get(grade_label, grade_label)
-            box_y = row_y_start - len(items) * row_h - 0.02
-            ax_report.add_patch(FancyBboxPatch(
-                (0.0, box_y - 0.01), 1.0, 0.07, transform=ax_report.transAxes,
-                boxstyle="round,pad=0.012", facecolor="#1a2540",
-                edgecolor=conclusion_color, linewidth=2))
-            ax_report.text(0.5, box_y + 0.025, f"[{grade}]  {en_grade_label}",
-                           transform=ax_report.transAxes,
-                           fontsize=15, color=conclusion_color, weight="bold",
-                           ha="center", va="center")
 
         if not output_dir:
             output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "output")
