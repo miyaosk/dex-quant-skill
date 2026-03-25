@@ -632,19 +632,56 @@ class QuantAPIClient:
         leverage = result.get('leverage', m.get('leverage', 1))
         mode_label = "逐仓" if margin_mode == "isolated" else "全仓"
 
-        print(f"\n{'━' * 50}")
-        print(f"  {result.get('strategy_name', '策略')}  {conclusion_map.get(conclusion, conclusion)}")
-        print(f"{'━' * 50}")
+        evaluation = m.get('evaluation', {})
+        grade = evaluation.get('grade', '')
+        grade_label = evaluation.get('grade_label', '')
+        score = evaluation.get('score', 0)
+        max_score = evaluation.get('max_score', 14)
+
+        title_suffix = conclusion_map.get(conclusion, conclusion)
+        if grade:
+            title_suffix = f"[{grade}级] {grade_label}"
+
+        print(f"\n{'━' * 56}")
+        print(f"  {result.get('strategy_name', '策略')}  {title_suffix}")
+        print(f"{'━' * 56}")
         print(f"  本金  {init_cap:>,.0f}    余额  {bal:>,.0f}    收益  {ret:>+.2%}")
         print(f"  Sharpe {m.get('sharpe_ratio', 0):>.2f}    Sortino {m.get('sortino_ratio', 0):>.2f}    盈亏比  {m.get('profit_loss_ratio', 0):>.2f}")
         print(f"  回撤  {abs(m.get('max_drawdown_pct', 0)):>.2%}    胜率  {m.get('win_rate', 0):>.1%}    交易  {m.get('total_trades', 0)}笔")
         print(f"  杠杆  {leverage}x        仓位  {mode_label}")
         if m.get('liquidation_count', 0) > 0:
             print(f"  ⚠ 爆仓 {m['liquidation_count']} 次")
-        print(f"{'━' * 50}")
+        print(f"{'━' * 56}")
 
+        QuantAPIClient._print_evaluation(evaluation)
         QuantAPIClient._print_equity_chart(result.get("equity_curve", []), init_cap)
         QuantAPIClient._print_trade_details(result.get("trades", []), leverage, mode_label)
+
+    @staticmethod
+    def _print_evaluation(evaluation: dict) -> None:
+        """评分卡：逐项展示达标/不达标"""
+        if not evaluation or not evaluation.get("items"):
+            return
+
+        items = evaluation["items"]
+        score = evaluation.get("score", 0)
+        max_score = evaluation.get("max_score", 14)
+        grade = evaluation.get("grade", "?")
+
+        grade_bar = "█" * score + "░" * (max_score - score)
+        print(f"\n  📊 策略评分  {score}/{max_score}  [{grade_bar}]  {grade}级")
+        print(f"  {'─' * 52}")
+        print(f"  {'指标':<8} {'实际值':>8}  {'得分':>4}  {'标准'}")
+        print(f"  {'─' * 52}")
+
+        for item in items:
+            s = item["score"]
+            icon = "🟢" if s == 2 else ("🟡" if s == 1 else "🔴")
+            print(f"  {icon} {item['name']:<6} {item['value']:>8}  {s}/{item['max']}   {item['thresholds']}")
+
+        print(f"  {'─' * 52}")
+        print(f"  结论: {evaluation.get('grade_label', '')}")
+        print()
 
     @staticmethod
     def _print_equity_chart(equity_curve: list, initial_capital: float, width: int = 60, height: int = 15) -> None:

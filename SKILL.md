@@ -250,12 +250,36 @@ client.print_metrics(bt)
 
 ### Display rules
 
-- **Always** show full `print_metrics(bt)`. It now includes equity chart + trade details with leverage/margin/position info.
+- **Always** show full `print_metrics(bt)`. It now includes evaluation scorecard + equity chart + trade details.
 - `print_trades(bt)` prints detailed table (leverage, margin mode, margin used per trade).
-- After completion, suggest next step based on results:
-  - Sharpe > 1.0 → "效果不错！要优化参数吗？" (→ §3)
-  - Negative return → "要调整逻辑还是换时间窗口？"
+- After completion, suggest next step **based on grade**:
+  - A/B 级 → "效果不错！要优化参数吗？" (→ §3) 或 "可以考虑小仓实盘"
+  - C 级 → "及格但不够好，要优化参数还是调整逻辑？"
+  - D 级 → "策略需要优化，建议调整入场/出场逻辑后重测"
+  - F 级 → "策略失败，建议重新设计策略逻辑" (→ §1)
   - Zero trades → "没有交易信号，入场条件可能太严格。" (→ §1)
+
+### Strategy evaluation standard
+
+Server returns a scorecard with 7 metrics, each scored 0-2 (max 14):
+
+| Metric | 🟢 优 (2分) | 🟡 及格 (1分) | 🔴 差 (0分) |
+|--------|------------|--------------|------------|
+| 收益率 | >20% | >0% | ≤0% |
+| Sharpe | >1.5 | >0.5 | ≤0.5 |
+| 最大回撤 | <10% | <20% | ≥20% |
+| 胜率 | >50% | >35% | ≤35% |
+| 盈亏比 | >1.5 | >1.0 | ≤1.0 |
+| 交易数 | ≥30 | ≥10 | <10 |
+| 爆仓 | 0次 | — | >0次 |
+
+| Grade | Score | Conclusion | Meaning |
+|-------|-------|------------|---------|
+| A | 12-14 | approved | 优秀策略，可直接实盘 |
+| B | 9-11 | approved | 良好策略，建议小仓实盘验证 |
+| C | 6-8 | paper_trade_first | 及格策略，建议先模拟观察 |
+| D | 3-5 | rejected | 较差策略，需要优化后再测 |
+| F | 0-2 | rejected | 失败策略，建议重新设计 |
 
 ---
 
