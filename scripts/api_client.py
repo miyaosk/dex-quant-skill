@@ -660,20 +660,46 @@ class QuantAPIClient:
         if m.get('liquidation_count', 0) > 0:
             lines.append(f"⚠ 爆仓 {m['liquidation_count']} 次")
 
+        conclusion = result.get("conclusion", "")
+        conclusion_map = {
+            "approved": "✅ 通过，可考虑实盘",
+            "paper_trade_first": "⚠️ 先模拟，不建议直接实盘",
+            "rejected": "❌ 驳回，建议重新设计策略",
+        }
+
         items = evaluation.get("items", [])
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
         if items:
             score_val = evaluation.get("score", 0)
             max_score = evaluation.get("max_score", 14)
-            lines.append(f"━━━━━━━━━━━━━━━━━━━━")
             lines.append(f"评分 {score_val}/{max_score}  {grade}级")
             for item in items:
                 s = item["score"]
                 dot = "●" if s == 2 else ("◐" if s == 1 else "○")
                 lines.append(f"{dot} {item['name']} {item['value']}  ({item.get('thresholds', '')})")
+            lines.append(f"━━━━━━━━━━━━━━━━━━━━")
 
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
         if grade_label:
             lines.append(f"结论: [{grade}] {grade_label}")
+        elif conclusion:
+            lines.append(f"结论: {conclusion_map.get(conclusion, conclusion)}")
+        else:
+            if ret >= 0 and m.get('sharpe_ratio', 0) > 0.5:
+                lines.append("结论: ⚠️ 建议先模拟观察")
+            elif ret < 0:
+                lines.append("结论: ❌ 策略亏损，建议优化后重测")
+            else:
+                lines.append("结论: ⚠️ 收益偏低，建议优化参数")
+
+        lines.append("")
+        if ret > 0.2 and m.get('sharpe_ratio', 0) > 1.5:
+            lines.append("建议: 效果不错，可考虑小仓实盘或优化参数")
+        elif ret > 0:
+            lines.append("建议: 有正收益但不够稳健，建议优化参数后重测")
+        elif m.get('total_trades', 0) == 0:
+            lines.append("建议: 没有交易信号，入场条件可能太严格")
+        else:
+            lines.append("建议: 策略需要调整，可优化参数或重新设计入场/出场逻辑")
 
         trades = result.get("trades", [])
         if trades:
