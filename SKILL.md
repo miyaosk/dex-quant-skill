@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.5.4
+version: 3.6.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -27,15 +27,39 @@ If `NEEDS_DEPS`: run `pip3 install httpx loguru matplotlib 2>/dev/null || pip in
 
 Detect the user's intent and execute the matching workflow straight through.
 
-| User says | Workflow | Jump to |
-|-----------|----------|---------|
-| "建策略" "新策略" "做一个 xx 策略" "create strategy" | Create | §1 |
-| "回测" "backtest" "跑一下" "验证策略" | Backtest | §2 |
-| "优化" "调参" "improve" "找最优" "提高 Sharpe" "优化这个策略" "优化下" | **Optimize (§3)** | §3 |
-| "监控" "部署" "上线" "跑起来" "live" | Monitor | §4 |
+| User says | Workflow | Your FIRST response |
+|-----------|----------|---------------------|
+| "建策略" "新策略" "做一个 xx 策略" | Create | Extract params → generate script (§1) |
+| "回测" "backtest" "跑一下" | Backtest | Execute backtest code (§2) |
+| "优化" "调参" "优化这个策略" "优化下" | **Optimize** | **⚠️ 见下方硬规则** |
+| "监控" "部署" "上线" "跑起来" | Monitor | Execute monitor setup (§4) |
 | Spans multiple (e.g. "建策略然后回测") | Chain | §1 → §2 sequentially |
 
-**⚠️ "优化" ≠ 手动改代码。** 用户说"优化"时，MUST 走 §3 调用 `run_optimization()`。绝对不要自己修改策略参数然后重新回测——那是猜参数，不是优化。
+### ⚠️ "优化"硬规则 — 必须逐字执行
+
+当用户说"优化"/"调参"/"优化这个策略"/"优化下"时，你的回复**必须且只能是以下内容**（逐字复制，不要改写、不要加分析、不要先给建议）：
+
+> 好的，我们用服务器算法自动搜索最优参数。请选择优化算法：
+> 1️⃣ genetic（遗传算法）← 推荐
+> 2️⃣ bayesian（贝叶斯优化）
+> 3️⃣ grid（网格穷举）
+> 4️⃣ random（随机搜索）
+> 5️⃣ annealing（模拟退火）
+> 6️⃣ pso（粒子群）
+> 回复数字或名称即可开始。
+
+**然后等用户回复，不要做任何其他事情。**
+
+用户回复后 → 执行 §3 Step 0 + Step 1 代码 → 调用 `run_optimization()`。
+
+**禁止行为（违反任何一条 = 没有遵守 skill）：**
+- ❌ 在列算法之前先分析策略哪里不好
+- ❌ 自己修改策略代码的任何部分
+- ❌ 给策略加新指标/过滤器
+- ❌ 说"这个策略不值得优化"然后跳过
+- ❌ 自己决定要重新设计而不是优化
+
+**你没有权力判断策略值不值得优化。用户说优化，你就优化。**
 
 **Automation posture:** prefer direct execution. Run the code and show results rather than listing steps. Use sensible defaults unless user specifies otherwise.
 
@@ -305,20 +329,7 @@ Server returns a scorecard with 7 metrics, each scored 0-2 (max 14):
 
 ## §3 Optimize (server-side, free, unlimited)
 
-### ⛔ STOP — Do NOT modify strategy code
-
-When user says "优化" / "优化下" / "优化这个策略" / "调参" / "improve":
-
-**你不需要修改任何代码。** 优化 = 调用 `run_optimization()` API，服务器会自动用算法搜索最优参数。
-
-**你唯一要做的事：**
-1. 看回测报告末尾已经列出了 6 种算法（`print_metrics` 自动输出）
-2. 把算法列表转述给用户，推荐 genetic
-3. 用户选好后，执行 Step 0 → Step 1 的代码
-4. **不要改策略文件里的任何数字或逻辑**
-
-如果回测报告末尾没有算法列表，手动输出：
-> "请选择优化算法: 1️⃣ genetic（推荐） 2️⃣ bayesian 3️⃣ grid 4️⃣ random 5️⃣ annealing 6️⃣ pso"
+**Reminder:** 触发表里的"优化硬规则"已经规定了你的第一条回复内容。到这里时，用户已经选好了算法。直接执行下面的步骤。
 
 ### Step 0: Check if strategy is parameterized
 
