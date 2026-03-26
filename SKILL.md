@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.4.10
+version: 3.5.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -264,9 +264,16 @@ client.print_metrics(bt)
 `print_trades(bt)` prints full trade table — only needed if user asks for more details.
 
 After completion, suggest next step **based on grade**:
-  - A/B 级 → "效果不错！要优化参数吗？" (→ §3) 或 "可以考虑小仓实盘"
-  - C 级 → "及格但不够好，要优化参数还是调整逻辑？"
-  - D 级 → "策略需要优化，建议调整入场/出场逻辑后重测"
+  - A/B 级 → "效果不错！要优化参数进一步提升吗？" (→ §3) 或 "可以考虑小仓实盘"
+  - C/D 级 → suggest optimization with algorithm recommendation:
+    "可以用参数优化提升表现，我们支持 6 种优化算法：
+    🧬 genetic（遗传算法）— 参数多时推荐，默认首选
+    🎯 bayesian（贝叶斯）— 快速收敛，评估次数少
+    📊 grid（网格穷举）— 参数少时用，≤200 组合
+    🎲 random（随机搜索）— 探索性调参
+    🔥 annealing（模拟退火）— 跳出局部最优
+    🌊 pso（粒子群）— 连续参数优化
+    要用哪种算法优化？推荐 genetic。"
   - F 级 → "策略失败，建议重新设计策略逻辑" (→ §1)
   - Zero trades → "没有交易信号，入场条件可能太严格。" (→ §1)
 
@@ -297,6 +304,10 @@ Server returns a scorecard with 7 metrics, each scored 0-2 (max 14):
 ## §3 Optimize (server-side, free, unlimited)
 
 **CRITICAL: When user says "优化" / "调参" / "improve" / "找最优" — MUST use this workflow. Never manually tweak parameters and re-backtest — that's guessing, not optimizing.**
+
+**Before running:** If user didn't specify an algorithm, briefly list the 6 options and recommend one:
+> "我们支持 6 种优化算法：🧬 genetic（默认推荐）、🎯 bayesian、📊 grid、🎲 random、🔥 annealing、🌊 pso。直接用 genetic 开跑？"
+> If user agrees or doesn't specify, use `genetic`.
 
 ### Step 0: Check if strategy is parameterized
 
