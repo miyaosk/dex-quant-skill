@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.5.0
+version: 3.5.1
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -31,9 +31,11 @@ Detect the user's intent and execute the matching workflow straight through.
 |-----------|----------|---------|
 | "建策略" "新策略" "做一个 xx 策略" "create strategy" | Create | §1 |
 | "回测" "backtest" "跑一下" "验证策略" | Backtest | §2 |
-| "优化" "调参" "improve" "找最优" "提高 Sharpe" | Optimize | §3 |
+| "优化" "调参" "improve" "找最优" "提高 Sharpe" "优化这个策略" "优化下" | **Optimize (§3)** | §3 |
 | "监控" "部署" "上线" "跑起来" "live" | Monitor | §4 |
 | Spans multiple (e.g. "建策略然后回测") | Chain | §1 → §2 sequentially |
+
+**⚠️ "优化" ≠ 手动改代码。** 用户说"优化"时，MUST 走 §3 调用 `run_optimization()`。绝对不要自己修改策略参数然后重新回测——那是猜参数，不是优化。
 
 **Automation posture:** prefer direct execution. Run the code and show results rather than listing steps. Use sensible defaults unless user specifies otherwise.
 
@@ -303,7 +305,11 @@ Server returns a scorecard with 7 metrics, each scored 0-2 (max 14):
 
 ## §3 Optimize (server-side, free, unlimited)
 
-**CRITICAL: When user says "优化" / "调参" / "improve" / "找最优" — MUST use this workflow. Never manually tweak parameters and re-backtest — that's guessing, not optimizing.**
+**CRITICAL — MUST follow these rules:**
+1. When user says "优化" / "优化下" / "优化这个策略" / "调参" / "improve" / "找最优" → **MUST call `run_optimization()`**
+2. **NEVER** manually edit strategy parameters and re-run backtest as a substitute for optimization
+3. **NEVER** add new indicators/filters/logic when user asks to "optimize" — that's redesign (§1), not optimize
+4. Optimization = algorithmic parameter search via server API. Manual tweaking = guessing. Always use the API.
 
 **Before running:** If user didn't specify an algorithm, briefly list the 6 options and recommend one:
 > "我们支持 6 种优化算法：🧬 genetic（默认推荐）、🎯 bayesian、📊 grid、🎲 random、🔥 annealing、🌊 pso。直接用 genetic 开跑？"
@@ -484,7 +490,8 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Install numpy/pandas for backtest | Server has them | Only `httpx loguru matplotlib` locally |
 | Build local backtest engine | Server already has one | Use `submit_backtest()` |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
-| Manually tweak params + re-backtest | That's guessing | Use §3 `run_optimization()` |
+| Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
+| Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate messages | Heartbeat will delete the text message | 只发一条图片附件（caption 含指标摘要） |
 | Use `![](path)` for chart image | Telegram can't render local paths | 用平台的文件/图片发送功能作为附件发送 |
 
