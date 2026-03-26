@@ -556,6 +556,7 @@ class QuantAPIClient:
                     "优化完成 | 评估={} 失败={} | 最优fitness={:.4f} | 耗时={}ms",
                     completed - failed, failed, best_fitness, elapsed,
                 )
+                QuantAPIClient.print_optimization(progress, strategy_name=strategy_name)
                 return progress
 
             if status == "failed":

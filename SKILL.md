@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.6.6
+version: 3.6.7
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -381,7 +381,7 @@ result = client.run_optimization(
     max_combinations=100,
     method="genetic",
 )
-client.print_optimization(result, strategy_name="策略名")
+# run_optimization 完成后会自动打印格式化报告，不需要额外调用
 ```
 
 ### Optimization methods
@@ -492,9 +492,9 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | `check_backtest(job_id)` | Poll status: running / completed / failed |
 | `wait_backtest(job_id)` | Poll until complete, print progress |
 | `run_server_backtest(...)` | Submit + poll in one call (blocking) |
-| `run_optimization(...)` | Submit optimization, poll until complete |
+| `run_optimization(...)` | Submit optimization, poll + **auto print report** |
 | `print_metrics(result)` | Display backtest report card |
-| `print_optimization(result)` | Display optimization Top 5 |
+| `print_optimization(result)` | Display optimization report (auto-called by run_optimization) |
 | `print_trades(result)` | Display trade records (only when user asks) |
 
 ### Quota
