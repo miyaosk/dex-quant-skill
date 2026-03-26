@@ -722,12 +722,17 @@ class QuantAPIClient:
 
         lines.append("")
         lines.append("━━━━━━━━━━━━━━━━━━━━")
-        if grade in ("A", "B"):
-            lines.append("🚀 下一步: 效果不错！回复「优化」用算法搜索更优参数，或考虑小仓实盘")
-        elif grade in ("C", "D"):
-            lines.append("🔧 下一步: 回复「优化」→ 服务器用 genetic/bayesian 等算法自动搜索最优参数组合（非手动调参）")
-        elif grade == "F" or m.get('total_trades', 0) == 0:
+        if grade == "F" or m.get('total_trades', 0) == 0:
             lines.append("🔄 下一步: 策略逻辑需要重新设计，回复「新策略」重新开始")
+        else:
+            lines.append("🔧 下一步: 可用服务器算法自动搜索最优参数，请选择:")
+            lines.append("  1️⃣ genetic（遗传算法）← 推荐")
+            lines.append("  2️⃣ bayesian（贝叶斯）")
+            lines.append("  3️⃣ grid（网格穷举）")
+            lines.append("  4️⃣ random（随机搜索）")
+            lines.append("  5️⃣ annealing（模拟退火）")
+            lines.append("  6️⃣ pso（粒子群）")
+            lines.append("回复数字或算法名即可开始优化")
 
         caption = "\n".join(lines)
         result["_caption"] = caption
