@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.6.7
+version: 3.6.8
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -407,20 +407,24 @@ result = client.run_optimization(
 
 ### Step 2: Output + apply
 
-**⚠ 代码执行后你 MUST 这样回复（和回测报告同一规则）：**
+**⚠ 代码执行后你 MUST 这样回复（和回测报告完全相同的规则）：**
 
-`print_optimization()` 的终端输出末尾会打印 `👉 请将以上报告原样发送给用户`。你**必须照做**：
+`run_optimization()` 完成后会自动生成：
+- `result["_optimization_chart_path"]` — PNG 图片（Top 5 排名条形图）
+- `result["_caption"]` — 格式化好的文字报告
 
-1. **复制 `print_optimization()` 输出的报告文字**，原样发给用户
-2. **不要改写、不要加自己的分析、不要重新排版、不要用 bullet point 重写**
-3. 报告末尾已包含结论和下一步建议，不需要你额外补充
-4. 你只需在报告后面追加一句：正收益 → "要用最优参数跑完整回测验证吗？" / 负收益 → "要重新设计策略吗？"
+你**必须按以下步骤发送**：
+1. 读取 `result["_optimization_chart_path"]` 的 PNG 文件
+2. 用 `result["_caption"]` 的文字作为图片 caption
+3. **只发一条图片附件消息**（caption 里已包含指标、排名、结论和下一步）
+4. 不要单独发文字消息
 
 **⛔ 禁止行为（违反任何一条 = 不合格）：**
 - ❌ 自己写 "结论先说" / "我的判断" / "一句话" 等分析段落
 - ❌ 把 Top 5 改成 bullet point 列表
 - ❌ 用自己的话重述参数和指标
 - ❌ 忽略 `_caption` 另起炉灶
+- ❌ 不发图片只发文字
 
 ---
 

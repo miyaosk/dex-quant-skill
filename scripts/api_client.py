@@ -566,7 +566,7 @@ class QuantAPIClient:
 
     @staticmethod
     def print_optimization(result: dict, strategy_name: str = "") -> None:
-        """生成优化报告 caption，格式对齐回测报告。"""
+        """生成优化报告 PNG + caption，和回测报告同一套输出规则。"""
         status = result.get("status", "")
         if status != "completed":
             print(f"优化失败: {result.get('error', '未知错误')}")
@@ -592,10 +592,10 @@ class QuantAPIClient:
             f"━━━━━━━━━━━━━━━━━━━━",
             f"🧬 算法 {method_label}  ⏱️ 耗时 {elapsed:.0f}s",
             f"📊 评估 {success}/{total}组  ❌ 失败 {failed}组",
-            f"━━━━━━━━━━━━━━━━━━━━",
         ]
 
         if not results:
+            lines.append("━━━━━━━━━━━━━━━━━━━━")
             lines.append("❌ 无有效结果，所有参数组合均失败")
             caption = "\n".join(lines)
             result["_caption"] = caption
@@ -611,6 +611,7 @@ class QuantAPIClient:
         top_params = top.get("params", {})
 
         ret_icon = "📈" if top_ret >= 0 else "📉"
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
         lines.append(f"🥇 最优参数:")
         params_str = "  ".join(f"{k}={v}" for k, v in top_params.items())
         lines.append(f"  {params_str}")
@@ -649,8 +650,126 @@ class QuantAPIClient:
         caption = "\n".join(lines)
         result["_caption"] = caption
 
+        chart_path = QuantAPIClient._print_optimization_chart(results, name, method_label, success, total, failed, elapsed)
+        if chart_path:
+            result["_optimization_chart_path"] = chart_path
+
         print(f"\n{caption}")
-        print(f"\n👉 请将以上报告原样发送给用户，不要改写、不要加自己的分析。报告已包含完整结论和下一步建议。")
+        if chart_path:
+            print(f"\n📊 优化报告图片: {chart_path}")
+            print(f"👉 请将此图片作为附件发送，caption 用上面的文字")
+
+    @staticmethod
+    def _print_optimization_chart(results: list, strategy_name: str, method_label: str,
+                                   success: int, total: int, failed: int, elapsed: float) -> str | None:
+        """生成优化报告 PNG（排名表 + 收益对比条形图）。"""
+        if not results:
+            return None
+
+        try:
+            import matplotlib
+        except ImportError:
+            return None
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.gridspec import GridSpec
+
+        QuantAPIClient._setup_chinese_font()
+
+        BG = "#0f0f1a"
+        CARD = "#1c2333"
+        WHITE = "#e8e8e8"
+        GREEN = "#00d4aa"
+        RED = "#ff6b6b"
+        GRAY = "#8a8fa0"
+        LIGHT = "#c8cad0"
+        YELLOW = "#ffd93d"
+
+        top5 = results[:5]
+        n = len(top5)
+
+        fig = plt.figure(figsize=(12, max(4, 1.5 + n * 1.2)), facecolor=BG)
+        gs = GridSpec(2, 1, figure=fig, height_ratios=[1, max(2, n * 0.8)],
+                      hspace=0.25, left=0.05, right=0.68, top=0.92, bottom=0.06)
+
+        ax_hdr = fig.add_subplot(gs[0])
+        ax_hdr.set_facecolor(BG)
+        ax_hdr.set_xlim(0, 10)
+        ax_hdr.set_ylim(0, 3)
+        ax_hdr.axis("off")
+
+        ax_hdr.text(5, 2.4, f"{strategy_name} — Optimization", fontsize=14,
+                    color=WHITE, ha="center", va="center", fontweight="bold")
+        ax_hdr.text(5, 1.5, f"Algorithm: {method_label}  |  Evaluated: {success}/{total}  |  Failed: {failed}  |  Time: {elapsed:.0f}s",
+                    fontsize=9, color=GRAY, ha="center", va="center")
+
+        top = top5[0]
+        top_ret = top.get("total_return_pct", 0)
+        top_sharpe = top.get("sharpe_ratio", 0)
+        top_dd = abs(top.get("max_drawdown_pct", 0))
+        top_wr = top.get("win_rate", 0)
+        top_trades = top.get("total_trades", 0)
+
+        kpi_items = [
+            ("Return", f"{top_ret:+.2%}", GREEN if top_ret >= 0 else RED),
+            ("Sharpe", f"{top_sharpe:.2f}", GREEN if top_sharpe >= 0.5 else (YELLOW if top_sharpe > 0 else RED)),
+            ("MaxDD", f"{top_dd:.2%}", GREEN if top_dd < 0.05 else (YELLOW if top_dd < 0.15 else RED)),
+            ("WinRate", f"{top_wr:.0%}", GREEN if top_wr >= 0.5 else (YELLOW if top_wr >= 0.35 else RED)),
+            ("Trades", f"{top_trades}", LIGHT),
+        ]
+        for i, (label, val, clr) in enumerate(kpi_items):
+            x = 1 + i * 1.8
+            ax_hdr.text(x, 0.6, val, fontsize=12, color=clr, ha="center", va="center", fontweight="bold")
+            ax_hdr.text(x, 0.1, label, fontsize=7, color=GRAY, ha="center", va="center")
+
+        ax_bar = fig.add_subplot(gs[1])
+        ax_bar.set_facecolor(CARD)
+
+        ranks = list(range(n, 0, -1))
+        returns = [r.get("total_return_pct", 0) * 100 for r in top5]
+        colors = [GREEN if r >= 0 else RED for r in returns]
+        medals = ["#1", "#2", "#3", "#4", "#5"]
+
+        bars = ax_bar.barh(ranks, returns, color=colors, height=0.6, alpha=0.85)
+
+        x_min = min(returns) if returns else 0
+        x_max = max(returns) if returns else 0
+        x_range = x_max - x_min if x_max != x_min else 1
+
+        for i, r in enumerate(top5):
+            sharpe = r.get("sharpe_ratio", 0)
+            wr = r.get("win_rate", 0)
+            trades = r.get("total_trades", 0)
+            params = r.get("params", {})
+            params_short = ", ".join(f"{k}={v}" for k, v in list(params.items())[:5])
+            if len(params) > 5:
+                params_short += " ..."
+
+            ax_bar.text(1.02, ranks[i] + 0.18, f"Sharpe {sharpe:.2f}  WR {wr:.0%}  {trades}t",
+                        fontsize=7.5, color=LIGHT, va="center", transform=ax_bar.get_yaxis_transform())
+            ax_bar.text(1.02, ranks[i] - 0.18, params_short,
+                        fontsize=6.5, color=GRAY, va="center", transform=ax_bar.get_yaxis_transform())
+
+        ax_bar.set_yticks(ranks)
+        ax_bar.set_yticklabels([medals[i] for i in range(n)], fontsize=10, color=WHITE, fontweight="bold")
+        ax_bar.set_xlabel("Return %", fontsize=9, color=GRAY)
+        ax_bar.tick_params(axis="x", colors=GRAY, labelsize=8)
+        ax_bar.axvline(x=0, color=GRAY, linewidth=0.5, alpha=0.5)
+        ax_bar.spines["top"].set_visible(False)
+        ax_bar.spines["right"].set_visible(False)
+        ax_bar.spines["bottom"].set_color(GRAY)
+        ax_bar.spines["left"].set_color(GRAY)
+
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "output")
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        safe_name = (strategy_name or "optimize").replace(" ", "_").replace("/", "_")[:30]
+        ts = int(_time.time())
+        filepath = os.path.join(output_dir, f"{safe_name}_opt_{ts}.png")
+
+        fig.savefig(filepath, dpi=150, facecolor=fig.get_facecolor())
+        plt.close(fig)
+        return filepath
 
     # ═══════════════ 配额 ═══════════════
 
