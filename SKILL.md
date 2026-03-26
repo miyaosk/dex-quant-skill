@@ -1,10 +1,11 @@
 ---
 name: dex-quant-skill
-version: 3.6.0
+version: 3.6.1
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
-  支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
-  Use when user asks to create a trading strategy, backtest, optimize parameters, or monitor crypto markets.
+  支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
+  Use when user asks to: 建策略, 回测, 优化策略, 优化参数, 调参, 优化这个策略, 优化下, backtest, optimize, create strategy, monitor.
+  This skill MUST be used for ANY request involving trading strategies, backtesting, or parameter optimization. Do NOT use coding-agent for these tasks.
 allowed-tools:
   - Bash
   - Read
