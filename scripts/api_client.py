@@ -914,7 +914,7 @@ class QuantAPIClient:
         gs = GridSpec(2, 1, figure=fig,
                       height_ratios=[1, 3],
                       hspace=0.15,
-                      left=0.06, right=0.94, top=0.96, bottom=0.06)
+                      left=0.10, right=0.94, top=0.96, bottom=0.06)
 
         title = strategy_name or "Backtest Report"
         sign = "+" if ret_pct >= 0 else ""
@@ -972,7 +972,13 @@ class QuantAPIClient:
                           fontsize=10, color=RED, weight="bold")
 
         ax_chart.tick_params(colors=GRAY, labelsize=10)
-        ax_chart.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+        def _y_fmt(x, _):
+            if abs(x) >= 1_000_000:
+                return f"{x/1_000_000:.1f}M"
+            if abs(x) >= 1_000:
+                return f"{x/1_000:.1f}K"
+            return f"{x:.0f}"
+        ax_chart.yaxis.set_major_formatter(plt.FuncFormatter(_y_fmt))
         if isinstance(dates[0], datetime):
             span_days = (dates[-1] - dates[0]).days
             if span_days > 180:
