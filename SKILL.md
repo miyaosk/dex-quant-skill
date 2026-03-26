@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.6.4
+version: 3.6.5
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -381,7 +381,7 @@ result = client.run_optimization(
     max_combinations=100,
     method="genetic",
 )
-client.print_optimization(result)
+client.print_optimization(result, strategy_name="策略名")
 ```
 
 ### Optimization methods
@@ -407,12 +407,14 @@ client.print_optimization(result)
 
 ### Step 2: Output + apply
 
-1. Show full `print_optimization(result)` — Top 5 combos with metrics.
-2. Suggest: "最优参数是 fast_ema=15, slow_ema=50。要更新策略并回测验证吗？"
-3. If yes: update `PARAMS` → save → run §2 with the updated script.
-4. If optimization result is still bad (e.g. best combo still negative return): THEN suggest "参数优化后仍然不理想，建议重新设计策略逻辑（回复「新策略」）"
+**⚠ 代码执行后你 MUST 这样回复：**
+1. `print_optimization(result, strategy_name="策略名")` 会生成 `result["_caption"]`
+2. **直接输出 `result["_caption"]` 的文字**，不要改写、不要加自己的分析、不要重新排版
+3. 如果最优参数有正收益：追问 "要用最优参数跑完整回测验证吗？"
+4. 如果最优参数仍亏损：追问 "参数优化后仍不理想，建议重新设计策略逻辑（回复「新策略」）"
+5. If yes to回测: update `PARAMS` → save → run §2 with the updated script.
 
-**Key principle:** Always run `run_optimization()` FIRST. Only suggest redesign AFTER seeing optimization results are still bad. Never skip optimization and jump to redesign.
+**禁止行为：** 不要自己写长段分析，不要重新排版优化结果。`_caption` 已经包含了格式化好的报告，直接用。
 
 ---
 
