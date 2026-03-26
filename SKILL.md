@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.6.5
+version: 3.6.6
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -407,14 +407,20 @@ client.print_optimization(result, strategy_name="策略名")
 
 ### Step 2: Output + apply
 
-**⚠ 代码执行后你 MUST 这样回复：**
-1. `print_optimization(result, strategy_name="策略名")` 会生成 `result["_caption"]`
-2. **直接输出 `result["_caption"]` 的文字**，不要改写、不要加自己的分析、不要重新排版
-3. 如果最优参数有正收益：追问 "要用最优参数跑完整回测验证吗？"
-4. 如果最优参数仍亏损：追问 "参数优化后仍不理想，建议重新设计策略逻辑（回复「新策略」）"
-5. If yes to回测: update `PARAMS` → save → run §2 with the updated script.
+**⚠ 代码执行后你 MUST 这样回复（和回测报告同一规则）：**
 
-**禁止行为：** 不要自己写长段分析，不要重新排版优化结果。`_caption` 已经包含了格式化好的报告，直接用。
+`print_optimization()` 的终端输出末尾会打印 `👉 请将以上报告原样发送给用户`。你**必须照做**：
+
+1. **复制 `print_optimization()` 输出的报告文字**，原样发给用户
+2. **不要改写、不要加自己的分析、不要重新排版、不要用 bullet point 重写**
+3. 报告末尾已包含结论和下一步建议，不需要你额外补充
+4. 你只需在报告后面追加一句：正收益 → "要用最优参数跑完整回测验证吗？" / 负收益 → "要重新设计策略吗？"
+
+**⛔ 禁止行为（违反任何一条 = 不合格）：**
+- ❌ 自己写 "结论先说" / "我的判断" / "一句话" 等分析段落
+- ❌ 把 Top 5 改成 bullet point 列表
+- ❌ 用自己的话重述参数和指标
+- ❌ 忽略 `_caption` 另起炉灶
 
 ---
 
