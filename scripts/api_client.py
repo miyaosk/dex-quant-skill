@@ -564,8 +564,8 @@ class QuantAPIClient:
                 return progress
 
     @staticmethod
-    def print_optimization(result: dict) -> None:
-        """格式化打印参数优化结果。"""
+    def print_optimization(result: dict, strategy_name: str = "") -> None:
+        """生成优化报告 caption，格式对齐回测报告。"""
         status = result.get("status", "")
         if status != "completed":
             print(f"优化失败: {result.get('error', '未知错误')}")
@@ -576,29 +576,79 @@ class QuantAPIClient:
         failed = result.get("failed", 0)
         elapsed = result.get("elapsed_ms", 0) / 1000
         method = result.get("method", "genetic")
-        best = result.get("best_params", result.get("current_best_params", {}))
-        fitness = result.get("best_fitness", result.get("current_best_fitness", 0))
-
-        print(f"\n{'━' * 50}")
-        print(f"  参数优化  {method} | {completed - failed}/{total} 组 | {elapsed:.0f}s")
-        print(f"{'━' * 50}")
-
         results = result.get("results", [])
-        for r in (results or [{}])[:5]:
-            rank = r.get("rank", 1)
-            medal = "🥇🥈🥉"[rank - 1] if rank <= 3 else f"#{rank}"
-            ret = r.get("total_return_pct", 0)
-            sharpe = r.get("sharpe_ratio", 0)
-            dd = r.get("max_drawdown_pct", 0)
-            wr = r.get("win_rate", 0)
-            trades = r.get("total_trades", 0)
-            params = r.get("params", best)
+        success = completed - failed
+        name = strategy_name or "策略"
 
-            print(f"  {medal} {ret:>+.2%}  Sharpe {sharpe:.2f}  回撤 {abs(dd):.2%}  胜率 {wr:.0%}  {trades}笔")
-            params_str = "  ".join(f"{k}={v}" for k, v in params.items())
-            print(f"     {params_str}")
+        method_names = {
+            "grid": "网格穷举", "genetic": "遗传算法", "bayesian": "贝叶斯",
+            "random": "随机搜索", "annealing": "模拟退火", "pso": "粒子群",
+        }
+        method_label = method_names.get(method, method)
 
-        print(f"{'━' * 50}")
+        lines = [
+            f"🔧 {name} 参数优化报告",
+            f"━━━━━━━━━━━━━━━━━━━━",
+            f"🧬 算法 {method_label}  ⏱️ 耗时 {elapsed:.0f}s",
+            f"📊 评估 {success}/{total}组  ❌ 失败 {failed}组",
+            f"━━━━━━━━━━━━━━━━━━━━",
+        ]
+
+        if not results:
+            lines.append("❌ 无有效结果，所有参数组合均失败")
+            caption = "\n".join(lines)
+            result["_caption"] = caption
+            print(f"\n{caption}")
+            return
+
+        top = results[0]
+        top_ret = top.get("total_return_pct", 0)
+        top_sharpe = top.get("sharpe_ratio", 0)
+        top_dd = abs(top.get("max_drawdown_pct", 0))
+        top_wr = top.get("win_rate", 0)
+        top_trades = top.get("total_trades", 0)
+        top_params = top.get("params", {})
+
+        ret_icon = "📈" if top_ret >= 0 else "📉"
+        lines.append(f"🥇 最优参数:")
+        params_str = "  ".join(f"{k}={v}" for k, v in top_params.items())
+        lines.append(f"  {params_str}")
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"{ret_icon} 收益 {top_ret:+.2%}  📐 Sharpe {top_sharpe:.2f}")
+        lines.append(f"⚡ 回撤 {top_dd:.2%}  🎯 胜率 {top_wr:.0%}  🔄 交易 {top_trades}笔")
+
+        if len(results) > 1:
+            lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+            lines.append(f"📋 Top {min(len(results), 5)} 排名")
+            medals = ["🥇", "🥈", "🥉"]
+            for r in results[:5]:
+                rank = r.get("rank", 1)
+                medal = medals[rank - 1] if rank <= 3 else f"#{rank}"
+                ret = r.get("total_return_pct", 0)
+                sharpe = r.get("sharpe_ratio", 0)
+                dd = abs(r.get("max_drawdown_pct", 0))
+                wr = r.get("win_rate", 0)
+                trades = r.get("total_trades", 0)
+                lines.append(f"  {medal} {ret:+.2%} Sharpe {sharpe:.2f} 回撤 {dd:.2%} 胜率 {wr:.0%} {trades}笔")
+
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+
+        if top_sharpe >= 1.5 and top_ret > 0.1:
+            lines.append(f"✅ 优化结果优秀，建议用最优参数回测验证后小仓实盘")
+        elif top_sharpe >= 0.5 and top_ret > 0:
+            lines.append(f"⚠️ 优化结果尚可，建议用最优参数回测验证")
+        elif top_ret > 0:
+            lines.append(f"⚠️ 优化结果偏弱（Sharpe {top_sharpe:.2f}），建议改进策略结构后重新优化")
+        else:
+            lines.append(f"❌ 最优参数仍亏损，建议重新设计策略逻辑")
+
+        lines.append(f"")
+        lines.append(f"🔄 下一步: 回复「回测」用最优参数跑完整回测验证")
+
+        caption = "\n".join(lines)
+        result["_caption"] = caption
+
+        print(f"\n{caption}")
 
     # ═══════════════ 配额 ═══════════════
 
