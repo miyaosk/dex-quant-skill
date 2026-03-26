@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.5.2
+version: 3.5.3
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -409,6 +409,9 @@ client.print_optimization(result)
 1. Show full `print_optimization(result)` — Top 5 combos with metrics.
 2. Suggest: "最优参数是 fast_ema=15, slow_ema=50。要更新策略并回测验证吗？"
 3. If yes: update `PARAMS` → save → run §2 with the updated script.
+4. If optimization result is still bad (e.g. best combo still negative return): THEN suggest "参数优化后仍然不理想，建议重新设计策略逻辑（回复「新策略」）"
+
+**Key principle:** Always run `run_optimization()` FIRST. Only suggest redesign AFTER seeing optimization results are still bad. Never skip optimization and jump to redesign.
 
 ---
 

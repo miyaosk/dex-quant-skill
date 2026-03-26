@@ -720,6 +720,15 @@ class QuantAPIClient:
             if len(trades) > 5:
                 lines.append(f"  ...还有 {len(trades) - 5} 笔")
 
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        if grade in ("A", "B"):
+            lines.append("🚀 下一步: 效果不错！回复「优化」用算法搜索更优参数，或考虑小仓实盘")
+        elif grade in ("C", "D"):
+            lines.append("🔧 下一步: 回复「优化」→ 服务器用 genetic/bayesian 等算法自动搜索最优参数组合（非手动调参）")
+        elif grade == "F" or m.get('total_trades', 0) == 0:
+            lines.append("🔄 下一步: 策略逻辑需要重新设计，回复「新策略」重新开始")
+
         caption = "\n".join(lines)
         result["_caption"] = caption
 
