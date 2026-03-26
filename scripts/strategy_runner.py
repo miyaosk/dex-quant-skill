@@ -345,7 +345,7 @@ def run(
     symbol: str,
     timeframe: str,
     script_path: str = None,
-    server_url: str = "https://generous-hope-production-6cf6.up.railway.app",
+    server_url: str = "https://dex-quant-app-production.up.railway.app",
 ):
     """
     策略脚本的统一入口。
