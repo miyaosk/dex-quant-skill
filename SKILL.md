@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.5.1
+version: 3.5.2
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法，异步进度推送。
@@ -305,15 +305,31 @@ Server returns a scorecard with 7 metrics, each scored 0-2 (max 14):
 
 ## §3 Optimize (server-side, free, unlimited)
 
-**CRITICAL — MUST follow these rules:**
-1. When user says "优化" / "优化下" / "优化这个策略" / "调参" / "improve" / "找最优" → **MUST call `run_optimization()`**
-2. **NEVER** manually edit strategy parameters and re-run backtest as a substitute for optimization
-3. **NEVER** add new indicators/filters/logic when user asks to "optimize" — that's redesign (§1), not optimize
-4. Optimization = algorithmic parameter search via server API. Manual tweaking = guessing. Always use the API.
+### ⛔ MANDATORY CHECKPOINT — Read before doing ANYTHING
 
-**Before running:** If user didn't specify an algorithm, briefly list the 6 options and recommend one:
-> "我们支持 6 种优化算法：🧬 genetic（默认推荐）、🎯 bayesian、📊 grid、🎲 random、🔥 annealing、🌊 pso。直接用 genetic 开跑？"
-> If user agrees or doesn't specify, use `genetic`.
+When user says "优化" / "优化下" / "优化这个策略" / "调参" / "improve" / "找最优":
+
+**ASK YOURSELF: Am I about to call `run_optimization()`?**
+- ✅ YES → Continue to Step 0 below
+- ❌ NO, I'm about to manually change the strategy code → **STOP. That is WRONG. Go back and use `run_optimization()`.**
+
+**What "优化" means in this skill:**
+- ✅ 调用 `run_optimization()` 让服务器用算法搜索最优参数组合
+- ❌ 手动修改策略代码里的数字（如 RSI 从 60 改 58）→ 这是猜参数
+- ❌ 给策略加新指标/过滤器（如加 EMA200）→ 这是重新设计（§1），不是优化
+- ❌ 自己改完再跑回测 → 这是 §1+§2，不是 §3
+
+**First response MUST be:** list the 6 algorithms and ask user to pick:
+> "我们支持 6 种优化算法：
+> 🧬 genetic（遗传算法）— 参数多时推荐，默认首选
+> 🎯 bayesian（贝叶斯）— 快速收敛，评估次数少
+> 📊 grid（网格穷举）— 参数少时用，≤200 组合
+> 🎲 random（随机搜索）— 探索性调参
+> 🔥 annealing（模拟退火）— 跳出局部最优
+> 🌊 pso（粒子群）— 连续参数优化
+> 直接用 genetic 开跑？"
+
+If user agrees or doesn't specify, use `genetic`.
 
 ### Step 0: Check if strategy is parameterized
 
