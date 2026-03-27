@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.7.0
+version: 3.7.1
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -214,7 +214,10 @@ job_id = client.submit_backtest(
 print(f"任务ID: {job_id}，等待 15 秒后查询结果...")
 ```
 
-Tell user **immediately** that the task is submitted. Two code blocks = user sees "submitted" right away instead of waiting in silence.
+**⚠ 执行完 Step 1 后，你必须立即发一条消息给用户：**
+> ⏳ 已提交回测，任务 ID: {job_id}，预计 15 秒出结果...
+
+然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的消息。
 
 ### Step 2: Poll result (second code block, after 15s)
 
@@ -248,36 +251,7 @@ else:
 
 If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
 
-### Quick backtest (single block, for platforms with streaming output)
-
-```python
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from api_client import QuantAPIClient
-
-with open('{baseDir}/strategies/xxx_strategy.py', 'r') as f:
-    script_content = f.read()
-
-client = QuantAPIClient(timeout=300.0)
-bt = client.run_server_backtest(
-    script_content=script_content,
-    strategy_name="策略名", symbol="BTCUSDT", timeframe="4h",
-    start_date="2025-01-01", end_date="2025-12-31",
-    leverage=3, initial_capital=100000, direction="long_short",
-)
-# run_server_backtest 完成后会自动调用 print_metrics，不需要再手动调用
-```
-
-**⚠ 代码执行后你 MUST 这样回复：**
-1. 读取 `bt["_equity_chart_path"]` 的 PNG 文件
-2. 用 `bt["_caption"]` 作为图片 caption
-3. **只发一条图片附件消息**（不要单独发文字，会被 heartbeat 吞掉）
-
-**⛔ 禁止行为（违反任何一条 = 不合格）：**
-- ❌ 自己写"结果"/"结论"/"核心指标"/"我的判断"等分析段落
-- ❌ 用自己的话重述收益率、Sharpe、胜率等数据
-- ❌ 忽略 `_caption` 另起炉灶
-- ❌ 不发图片只发文字
-- ❌ 在图片消息之外再发一条文字总结
+**⛔ 禁止使用 `run_server_backtest()`（单代码块模式）** — 它会阻塞整个执行过程，用户看不到任何进度。必须用上面的 submit → poll 两步拆分。
 
 ### Backtest parameters
 
@@ -398,7 +372,12 @@ job_id = client.submit_optimization(
 print(f"任务ID: {job_id}，优化需要 1-3 分钟，稍后查询结果...")
 ```
 
-Tell user **immediately** that the task is submitted. Then run Step 1.5.
+**⚠ 执行完 Step 1 后，你必须立即发一条消息给用户：**
+> ⏳ 优化任务已提交 (job_id: {job_id})，{method} 算法，预计 1-3 分钟，稍后查询...
+
+然后再执行 Step 1.5 的代码块。
+
+**⛔ 禁止使用 `run_optimization()`（单代码块模式）** — 它会阻塞整个执行过程，用户看不到任何进度。必须用 submit → poll 两步拆分。
 
 ### Step 1.5: Poll result (second code block, after 30s)
 
@@ -411,8 +390,8 @@ client = QuantAPIClient(timeout=300.0)
 result = client.check_optimization("{job_id}", strategy_name="策略名")
 ```
 
-If still `running`: wait 20s, poll again. Up to 10 retries.
-If `completed`: `check_optimization` automatically prints the formatted report and generates the chart PNG.
+- If `running`: 发消息告诉用户当前进度 (e.g. "⏳ 已评估 40/100 (40%)...")，wait 20s, poll again. Up to 10 retries.
+- If `completed`: `check_optimization` 自动打印报告+生成图片。
 
 ### Optimization methods
 
