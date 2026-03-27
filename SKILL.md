@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.13.0
+version: 3.14.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -123,19 +123,19 @@ Detect the user's intent and execute the matching workflow straight through.
 2. **图片 + caption** — 当代码生成了图片（`_equity_chart_path` / `_optimization_chart_path`），**发送图片附件**，caption 用 `_caption` 字段的文本
 3. **禁止只展示不发送** — 不要把执行结果放在代码块或"执行结果"框里给用户看，用户在 TG 上看不到这些
 4. **禁止重述/改写** — `print()` 输出已经是格式化好的 tag 样式，直接发，不要用自己的话重写
-5. **一条消息原则** — 每个操作结果只发一条 TG 消息（或一条图片消息），不要拆成多条
+5. **图片优先原则** — 有图片时只发图片消息（caption 含摘要），不要额外再发文字消息；无图片时发一条文字消息
 
 ### 消息类型对照
 
 | 场景 | 发什么 | 怎么发 |
 |------|--------|--------|
 | 策略已生成 | 文本消息 | stdout 输出原样发送 |
-| 回测已提交 | 文本消息 | stdout 输出原样发送 |
-| 回测完成 | **图片** + caption | 发图片附件，caption = `_caption` |
-| 优化已提交 | 文本消息 | stdout 输出原样发送 |
-| 优化完成 | **图片** + caption | 发图片附件，caption = `_caption` |
+| 回测完成 | **图片** + caption | 发图片附件，caption = `_caption`，不要额外发文字 |
+| 优化完成 | **图片** + caption | 发图片附件，caption = `_caption`，不要额外发文字 |
 | 监控启动/停止/列表/状态 | 文本消息 | stdout 输出原样发送 |
 | 选择提示（算法/模式） | 文本消息 | 逐字发送模板内容 |
+
+注意：回测和优化使用单代码块（`run_server_backtest` / `run_optimization`），执行过程中的 stdout（进度、提交确认等）不需要单独发送，最终只发图片+caption 即可。
 
 ---
 
@@ -221,11 +221,13 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 
 If user asks "有什么推荐策略" or wants to quickly try a strategy, suggest these:
 
-| Strategy file | Symbol | Style | Tested grade |
-|--------------|--------|-------|--------------|
-| `sol_kdj_swing.py` | SOLUSDT | KDJ 超卖反弹 + EMA50 趋势过滤，多空双向 | **B (9/14)** |
-| `btc_trend_pullback.py` | BTCUSDT | EMA50 趋势 + EMA20 回踩入场，ATR trailing | C (8/14) |
-| `btc_macd_trend.py` | BTCUSDT | MACD 金叉/死叉 + EMA100 方向过滤 | C (7/14) |
+| Strategy file | Symbol | Style | 2025 回测 | Tested grade |
+|--------------|--------|-------|-----------|--------------|
+| `sol_rsi_momentum.py` | SOLUSDT | RSI>65 追涨 + RSI<35 追跌，EMA50 趋势过滤，trailing stop | **+2.27%** | C (7/14) |
+| `sol_kdj_swing.py` | SOLUSDT | KDJ 超卖反弹 + EMA50 趋势过滤，多空双向 | **+2.09%** | C (6/14) |
+| `btc_rsi_momentum.py` | BTCUSDT | RSI>70 极端动量入场，EMA50 过滤，4x ATR trailing | **+1.40%** | **B (10/14)** |
+| `btc_trend_pullback.py` | BTCUSDT | EMA50 趋势 + EMA20 回踩入场，ATR trailing | -1.21% | C (8/14) |
+| `btc_macd_trend.py` | BTCUSDT | MACD 金叉/死叉 + EMA100 方向过滤 | -1.84% | C (7/14) |
 
 All strategies have `PARAMS` dict for optimization. Suggest: "可以用优化功能搜索最优参数"
 
@@ -260,16 +262,20 @@ All strategies have `PARAMS` dict for optimization. Suggest: "可以用优化功
 **How it works:** Read strategy `.py` → pass source code as string → server fetches K-lines, executes script, simulates trades, returns metrics. You never run the strategy script locally.
 
 ```
-LOCAL                          SERVER
-┌──────────┐  script_content  ┌─────────────────┐
-│ Read .py │ ───────────────▶ │ Fetch K-lines   │
-│ Submit   │  job_id          │ Execute script   │
-│ Poll     │ ◀─────────────── │ Simulate trades  │
-│ Display  │  metrics+trades  │ Return report    │
-└──────────┘                  └─────────────────┘
+LOCAL (单代码块)               SERVER
+┌──────────────────┐  script  ┌─────────────────┐
+│ run_server_      │ ───────▶ │ Fetch K-lines   │
+│   backtest()     │          │ Execute script   │
+│ (内部自动轮询)    │ ◀─────── │ Simulate trades  │
+│ print_metrics()  │ metrics  │ Return report    │
+└──────────────────┘          └─────────────────┘
 ```
 
-### Step 1: Submit (first code block)
+### Step 1: Run backtest (单代码块，提交+轮询+报告一次完成)
+
+**⚠ 必须用 `run_server_backtest()`！它内置了自动轮询和进度打印，一个代码块搞定全流程。**
+
+**⛔ 禁止拆分为两个代码块！** 拆分后第二个代码块不会被执行，用户收不到结果。
 
 ```python
 import sys
@@ -280,7 +286,7 @@ with open('{baseDir}/strategies/xxx_strategy.py', 'r') as f:
     script_content = f.read()
 
 client = QuantAPIClient(timeout=300.0)
-job_id = client.submit_backtest(
+bt = client.run_server_backtest(
     script_content=script_content,
     strategy_name="策略名",
     symbol="BTCUSDT",
@@ -291,48 +297,26 @@ job_id = client.submit_backtest(
     initial_capital=100000,
     direction="long_short",
 )
-print(f"任务ID: {job_id}，等待 15 秒后查询结果...")
 ```
 
-**⚠ 执行完 Step 1 后，立即发一条 TG 消息给用户**（直接发文本，不要放代码块里）：
+`run_server_backtest()` 内部会自动：
+1. 提交回测任务并打印 `📋 回测已提交: {job_id} | 策略名 (BTCUSDT 4h)`
+2. 每 5 秒轮询进度，打印 `⏳ [Xs] stage (N%)`
+3. 完成后自动调用 `print_metrics()` 生成报告 + 权益曲线 PNG
 
-> ⏳ 已提交回测，任务 ID: {job_id}，预计 15 秒出结果...
-
-然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的 TG 消息。
-
-### Step 2: Poll result (second code block, after 15s)
-
-```python
-import time; time.sleep(15)
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from api_client import QuantAPIClient
-
-client = QuantAPIClient(timeout=300.0)
-bt = client.check_backtest("{job_id}")
-if bt["status"] == "completed":
-    client.print_metrics(bt)
-elif bt["status"] == "running":
-    print("⏳ 还在执行中，请稍后再查询...")
-else:
-    print(f"❌ 回测失败: {bt.get('error', '')}")
-```
-
-**⚠ 代码执行后你 MUST 发 TG 消息：**
+**⚠ 代码执行完毕后你 MUST 发 TG 消息：**
 1. 读取 `bt["_equity_chart_path"]` 的 PNG 文件
-2. 用 `bt["_caption"]` 的文字作为 caption
-3. **发一条 TG 图片消息**（图片附件 + caption）
-4. caption 里已包含所有指标，不需要额外文字
+2. 用 `bt["_caption"]` 的文字作为 caption 基础
+3. 根据评分等级在 caption 末尾追加一行建议（见下方 Display rules）
+4. **只发一条 TG 图片消息**（图片附件 + caption），不要额外发文字消息
 
 **⛔ 禁止行为：**
 - ❌ 自己写分析段落（"结果"/"结论"/"我的判断"）
 - ❌ 用自己的话重述指标数据
 - ❌ 忽略 `_caption` 另起炉灶
 - ❌ 只发文字不发图片
-- ❌ 图片消息之外再发一条文字消息
-
-If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
-
-**⛔ 禁止使用 `run_server_backtest()`（单代码块模式）** — 它会阻塞整个执行过程，用户看不到任何进度。必须用上面的 submit → poll 两步拆分。
+- ❌ 图片之外再额外发文字消息
+- ❌ 拆分为两个代码块（submit + poll 分开执行）
 
 ### Backtest parameters
 
@@ -352,7 +336,7 @@ If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
 |-------|-------------|
 | `脚本安全检查未通过` | Fix strategy (sandbox violation) — see §1 Sandbox rules |
 | `status: failed` | Retry once automatically, then report |
-| `status: running` after 60s | Poll every 15s, up to 5 minutes |
+| 执行超时 | `run_server_backtest` 内部自动每 5 秒轮询，无需手动处理 |
 | Network error / timeout | Retry once, then report |
 
 ### Display rules
@@ -416,7 +400,11 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 
 If the strategy needs refactoring, do it silently, save, then continue.
 
-### Step 1: Submit (first code block)
+### Step 1: Run optimization (单代码块，提交+轮询+报告一次完成)
+
+**⚠ 必须用 `run_optimization()`！它内置了自动轮询和进度打印（25%/50%/90%里程碑），一个代码块搞定全流程。**
+
+**⛔ 禁止拆分为两个代码块！** 拆分后第二个代码块不会被执行，用户收不到结果。
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -426,7 +414,7 @@ with open('{baseDir}/strategies/xxx_strategy.py', 'r') as f:
     script_content = f.read()
 
 client = QuantAPIClient(timeout=600.0)
-job_id = client.submit_optimization(
+result = client.run_optimization(
     script_content=script_content,
     params=[
         {"name": "fast_ema", "type": "int",   "low": 10, "high": 30, "step": 5},
@@ -442,53 +430,27 @@ job_id = client.submit_optimization(
     max_combinations=100,
     method="genetic",
 )
-print(f"任务ID: {job_id}，优化需要 1-3 分钟，稍后查询结果...")
 ```
 
-**⚠ 执行完 Step 1 后，立即发一条 TG 消息给用户：**
+`run_optimization()` 内部会自动：
+1. 提交任务并打印 `⏳ 优化任务已提交 (job_id: xxx)，共 N 种参数组合`
+2. 每隔几秒轮询进度，在 25%/50%/90% 节点打印里程碑
+3. 完成后自动调用 `print_optimization()` 生成报告 + 优化图表 PNG
 
-> ⏳ 优化任务已提交 (job_id: {job_id})，{method} 算法，{n} 组参数，预计 1-3 分钟...
+**⚠ 代码执行完毕后你 MUST 发 TG 消息：**
 
-然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的 TG 消息。
-
-### Step 2: Poll result (second code block, after 30s)
-
-```python
-import time; time.sleep(30)
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from api_client import QuantAPIClient
-
-client = QuantAPIClient(timeout=300.0)
-result = client.check_optimization("{job_id}", strategy_name="策略名")
-if result["status"] == "completed":
-    pass  # check_optimization 已自动打印报告+生成图片
-elif result["status"] == "running":
-    pct = result.get("progress_pct", 0)
-    completed = result.get("completed", 0)
-    total = result.get("total", 0)
-    print(f"⏳ 还在优化中 {completed}/{total} ({pct:.0f}%)，请稍后再查询...")
-else:
-    print(f"❌ 优化失败: {result.get('error', '')}")
-```
-
-**⚠ 代码执行后你 MUST 发 TG 消息：**
-
-- If `completed`:
-  1. 读取 `result["_optimization_chart_path"]` 的 PNG 文件
-  2. 用 `result["_caption"]` 的文字作为 caption
-  3. **发一条 TG 图片消息**（图片附件 + caption）
-  4. 不要额外发文字消息
-
-- If `running`: 发一条 TG 文本消息告诉用户当前进度 (e.g. "⏳ 已评估 40/100 (40%)，继续等待...")，wait 20s, poll again. Up to 10 retries.
+1. 读取 `result["_optimization_chart_path"]` 的 PNG 文件
+2. 用 `result["_caption"]` 的文字作为 caption
+3. **只发一条 TG 图片消息**（图片附件 + caption）
+4. stdout 中的进度信息不需要单独发送，caption 已包含最终结果
 
 **⛔ 禁止行为：**
-- ❌ 自己写分析段落
+- ❌ 自己写分析段落替代 caption
 - ❌ 用自己的话重述参数和指标
 - ❌ 忽略 `_caption` 另起炉灶
 - ❌ 只发文字不发图片
-- ❌ 图片消息之外再发文字消息
-
-**⛔ 禁止使用 `run_optimization()`（单代码块模式）** — 它会阻塞整个执行过程，用户看不到任何进度。必须用上面的 submit → poll 两步拆分。
+- ❌ 图片之外再额外发文字消息
+- ❌ 拆分为两个代码块（submit + poll 分开执行）
 
 ### Optimization methods
 
@@ -748,13 +710,13 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 
 | Method | Description |
 |--------|-------------|
-| `submit_backtest(...)` | Submit backtest job → returns `job_id` |
-| `check_backtest(job_id)` | Poll status: running / completed / failed |
-| `wait_backtest(job_id)` | Poll until complete, print progress |
-| `run_server_backtest(...)` | Submit + poll in one call (blocking) |
-| `submit_optimization(...)` | Submit optimization task, return job_id immediately |
-| `check_optimization(job_id)` | Check progress; auto-prints report + chart when completed |
-| `run_optimization(...)` | Submit + poll in one call (blocking, for streaming platforms) |
+| `run_server_backtest(...)` | **⭐ 回测必用** — 提交+轮询+报告一次完成 |
+| `submit_backtest(...)` | 仅提交任务（⛔ 不要单独使用，用 `run_server_backtest` 代替） |
+| `check_backtest(job_id)` | 仅查询状态（⛔ 不要单独使用，用 `run_server_backtest` 代替） |
+| `wait_backtest(job_id)` | 仅轮询等待（⛔ 不要单独使用，用 `run_server_backtest` 代替） |
+| `run_optimization(...)` | **⭐ 优化必用** — 提交+轮询+报告一次完成，内置进度打印 |
+| `submit_optimization(...)` | 仅提交任务（⛔ 不要单独使用，用 `run_optimization` 代替） |
+| `check_optimization(job_id)` | 仅查询进度（⛔ 不要单独使用，用 `run_optimization` 代替） |
 | `print_metrics(result)` | Display backtest report card |
 | `print_optimization(result)` | Display optimization report (auto-called) |
 | `start_monitor(script, name, symbol, timeframe, interval)` | Start server monitor (max 3 concurrent) |
@@ -778,11 +740,12 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 
 | Forbidden | Why | Correct |
 |-----------|-----|---------|
-| Run strategy script locally for backtest | Server runs it | `submit_backtest(script_content=...)` |
+| Run strategy script locally for backtest | Server runs it | `run_server_backtest(script_content=...)` |
 | `import os/subprocess/socket` in strategy | Sandbox blocks them | Only `sys`, `numpy`, `data_client`, `indicators` |
 | `df.rolling()`, `df.shift()`, `df.apply()` | Server pandas restricted | Use `ind.ema()`, `ind.sma()` etc. |
 | Install numpy/pandas for backtest | Server has them | Only `httpx loguru matplotlib` locally |
-| Build local backtest engine | Server already has one | Use `submit_backtest()` |
+| Build local backtest engine | Server already has one | Use `run_server_backtest()` |
+| 拆分为两个代码块 (submit→poll) | 第二个代码块不会被执行 | 用 `run_server_backtest()` / `run_optimization()` 单代码块 |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
@@ -796,7 +759,7 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 ## Important Rules
 
 1. **Backtest first, optimize second.** Get a working strategy before tuning.
-2. **Two code blocks for backtest.** User sees "submitted" immediately.
+2. **单代码块原则。** 回测用 `run_server_backtest()`，优化用 `run_optimization()`，一个代码块搞定全流程。禁止拆分为两个代码块。
 3. **所有输出发 TG 消息。** 执行代码后，stdout 输出原样发 TG 文本消息；有图片发 TG 图片消息 + caption。
 4. **Retry once on failure.** Automatic, no need to ask.
 5. **Indicators return numpy arrays.** `arr[i]` not `.iloc[i]`.
