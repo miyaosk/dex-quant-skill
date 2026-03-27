@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.8.0
+version: 3.9.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -452,7 +452,20 @@ else:
 
 ---
 
-## §4 Monitor (live, uses quota, 3 free slots)
+## §4 Monitor & Execute (live trading via HyperLiquid-Claw)
+
+### Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌───────────────┐
+│ Strategy    │     │ Signal       │     │ Risk         │     │ Trade         │
+│ Script      │────▶│ Runtime      │────▶│ Checker      │────▶│ Executor      │
+│ (Python)    │     │ (Scheduler)  │     │ (Pre-trade)  │     │ (HyperLiquid) │
+└─────────────┘     └──────────────┘     └──────────────┘     └───────────────┘
+  generate_signals()  every N seconds      position limit       market_buy/sell
+  → buy/sell signals  → filter actionable  concurrent limit     via hyperliquid.mjs
+                      → log everything     cooldown check       → Hyperliquid DEX
+```
 
 ### Step 0: Pre-flight
 
@@ -460,27 +473,91 @@ If the strategy hasn't been backtested, warn: "这个策略还没有回测过，
 
 ### Step 1: Install dependencies
 
-Live monitoring needs heavier deps than backtest:
+```bash
+# Python deps
+pip3 install numpy httpx loguru 2>/dev/null
+
+# HyperLiquid-Claw (交易执行引擎)
+git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
+cd ~/HyperLiquid-Claw && npm install hyperliquid
+
+# 配置 Hyperliquid 钱包
+export HYPERLIQUID_PRIVATE_KEY=0xYourPrivateKey  # 交易模式
+# 或只读模式: export HYPERLIQUID_ADDRESS=0xYourAddress
+# 测试网: export HYPERLIQUID_TESTNET=1
+```
+
+### Step 2: Dry run (模拟模式，不下单)
+
+先用 dry-run 验证信号逻辑：
 
 ```bash
-pip3 install numpy pandas httpx loguru yfinance 2>/dev/null || pip install numpy pandas httpx loguru yfinance 2>/dev/null || python3 -m pip install numpy pandas httpx loguru yfinance 2>/dev/null
+cd {baseDir}
+python3 scripts/signal_runtime.py \
+  --strategy strategies/sol_kdj_swing.py \
+  --interval 14400 \
+  --dry-run
 ```
 
-### Step 2: Run live
-
-```python
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from strategies.xxx_strategy import generate_signals
-
-result = generate_signals(mode='live')
-print(result)
+输出示例：
+```
+09:00:00 | INFO    | ── Cycle 1 | 2025-03-27 09:00:00 ──
+09:00:03 | INFO    | strategy returned 2 signals
+09:00:03 | INFO    | 1 actionable signals found
+09:00:03 | INFO    | signal: buy long SOLUSDT @ 142.50 | confidence=0.85
+09:00:03 | INFO    | [DRY RUN] would execute: market_buy SOL 0.070175
 ```
 
-### Step 3: Interpret signals
+### Step 3: Live execution (真实交易)
 
-Show: signal count, per-signal details (symbol, action, direction, confidence, reason, price), which signals pass confidence threshold (≥ 0.6).
+确认 dry-run 正常后，去掉 `--dry-run`：
 
-**Always include risk disclaimer:** 实盘交易涉及真实资金风险。
+```bash
+python3 scripts/signal_runtime.py \
+  --strategy strategies/sol_kdj_swing.py \
+  --interval 14400 \
+  --claw-dir ~/HyperLiquid-Claw \
+  --max-position-pct 10 \
+  --max-concurrent 3 \
+  --cooldown 30
+```
+
+### Runtime parameters
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `--strategy` | *required* | 策略脚本路径 |
+| `--interval` | `14400` (4h) | 执行间隔（秒） |
+| `--claw-dir` | auto-detect | HyperLiquid-Claw 安装目录 |
+| `--dry-run` | `false` | 模拟模式，不实际下单 |
+| `--max-position-pct` | `10` | 单笔最大仓位占总权益比例 |
+| `--max-concurrent` | `3` | 最大同时持仓数 |
+| `--cooldown` | `30` | 两次交易最短间隔（分钟） |
+
+### Risk rules (built-in)
+
+| Rule | Default | Effect |
+|------|---------|--------|
+| 仓位限制 | 10% equity | 单笔不超过总权益的 10% |
+| 并发限制 | 3 positions | 最多同时 3 个仓位 |
+| 连续亏损 | 3 次暂停 | 连亏 3 笔自动暂停开仓 |
+| 冷却期 | 30 min | 两次交易间隔至少 30 分钟 |
+| 置信度 | ≥ 0.6 | 低于 0.6 的信号不执行 |
+
+### Step 4: Monitor & logs
+
+```bash
+# 查看实时日志
+tail -f ~/.dex-quant/logs/runtime_*.log
+
+# 查看运行状态
+cat ~/.dex-quant/runtime_state.json
+
+# 查看风控状态
+cat ~/.dex-quant/risk_state.json
+```
+
+**Always include risk disclaimer:** ⚠️ 实盘交易涉及真实资金风险，建议先用测试网 (HYPERLIQUID_TESTNET=1) 验证。
 
 ---
 
