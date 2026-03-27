@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.17.0
+version: 3.18.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -57,8 +57,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | 优化算法选择 (1-6) | "4" / "random" / "随机" | 执行 §3 用 random 算法优化 |
 | 优化算法选择 (1-6) | "5" / "annealing" / "退火" | 执行 §3 用 annealing 算法优化 |
 | 优化算法选择 (1-6) | "6" / "pso" / "粒子" | 执行 §3 用 pso 算法优化 |
-| 监控模式选择 (1-2) | "1" / "服务器" | 执行 §4 Mode A 服务器监控 |
-| 监控模式选择 (1-2) | "2" / "本地" | 执行 §4 Mode B 本地运行 |
+| 监控/部署请求 | 任何 | 执行 §4 直接进入 Mode B 本地运行（服务器模式不可用） |
 | 回测报告下一步 (1-6) | "1" / "genetic" | 执行 §3 用 genetic 算法优化 |
 | 回测报告下一步 | "回测" / "再测一次" | 执行 §2 重新回测 |
 | 回测报告下一步 | "部署" / "监控" / "跑起来" | 执行 §4 监控 |
@@ -524,128 +523,33 @@ result = client.run_optimization(
 
 If the strategy hasn't been backtested, warn: "这个策略还没有回测过，建议先回测。" If user insists, proceed.
 
-### Step 1: Mode selection — 必须先问用户选择模式
+### Step 1: 直接进入本地运行模式
 
-When user triggers Monitor workflow (see routing table above), you MUST present this message verbatim:
+**⚠️ 服务器监控模式（Mode A）当前不可用** — 服务端监控接口尚未上线（返回 404）。
+**所有监控/部署请求一律使用 Mode B（本地运行）。**
 
-> 请选择运行模式：
+When user triggers Monitor workflow, you MUST present this message verbatim:
+
+> 📡 策略部署 — 本地运行模式
 >
-> 1️⃣ 服务器监控（推荐）
-> · 7×24 不间断运行，关机不影响
-> · 同时最多 3 个策略
-> · 定时执行策略 → 生成信号 → 存入数据库
-> · ⚠️ 不会自动下单，你可以查看信号后手动交易
+> 在你本地终端定时执行策略，风控检查后自动下单到 Hyperliquid DEX。
 >
-> 2️⃣ 本地运行（含自动下单）
-> · 需要本地终端常开，关机就停
-> · 数量不限
-> · 定时执行策略 → 风控检查 → 自动下单到 Hyperliquid
-> · ⚠️ 需要提供 Hyperliquid 钱包私钥
->
-> 回复 1 或 2 选择。
-
-Wait for user to choose before proceeding.
-
-### Step 2: Account info — 本地模式需要交易账号
-
-If user chose Mode B (local + auto-trade), MUST ask:
-
-> 自动下单需要以下信息：
->
-> 1. Hyperliquid 钱包私钥 — 用于签名交易（0x 开头）
-> 2. 是否使用测试网？ — 建议先用测试网验证
+> 📋 需要准备：
+> · Node.js >= 18
+> · Hyperliquid 钱包私钥（0x 开头）
+> · 建议先用测试网验证
 >
 > 🔒 安全说明：
 > · 私钥仅存在你本地环境变量中
 > · 不会上传到任何服务器或云端
-> · 不会写入日志、数据库或配置文件
-> · 仅在本地签名交易时使用
+> · 不会写入日志或配置文件
 >
-> 请提供你的钱包私钥，或者先用测试网试试？
+> 请提供你的钱包私钥，我来帮你部署。
+> 或者回复"测试网"先用测试网试试。
 
-If user chose Mode A (server), skip this step — server mode only generates signals, does not trade.
+Wait for user to provide private key before proceeding.
 
----
-
-### Mode A: 服务器监控（用户选了 1）
-
-服务器定时执行策略脚本，生成信号并存入数据库。7×24 不间断，关机不影响。
-同一用户最多同时 3 个策略，超出提示："已有 3 个策略在跑，请先停止一个，或改用本地运行（选 2）。"
-
-**服务器只生成信号，不自动下单。** 用户可以通过 check_monitor 查看最新信号，自行决定是否交易。
-
-#### A1. Start monitor — 启动监控
-
-```python
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from api_client import QuantAPIClient
-
-client = QuantAPIClient()
-
-script = open('{baseDir}/strategies/xxx_strategy.py').read()
-result = client.start_monitor(
-    script_content=script,
-    strategy_name="SOL KDJ Swing",
-    symbol="SOLUSDT",
-    timeframe="4h",
-    interval_seconds=14400,   # 4h
-)
-print(result)
-```
-
-After exec: 将 `start_monitor()` 的 stdout 输出**作为 TG 消息发送**给用户。
-
-#### A2. Check status — 查看状态
-
-```python
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from api_client import QuantAPIClient
-
-client = QuantAPIClient()
-result = client.check_monitor("mon_xxxxxxxxx")
-```
-
-After exec: 将 `check_monitor()` 的 stdout 输出**作为 TG 消息发送**给用户。
-
-#### A3. List monitors — 列出所有监控
-
-```python
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from api_client import QuantAPIClient
-
-client = QuantAPIClient()
-result = client.list_monitors()
-```
-
-After exec: 将 `list_monitors()` 的 stdout 输出**作为 TG 消息发送**给用户。
-
-#### A4. Stop monitor — 停止监控（释放配额）
-
-```python
-import sys; sys.path.insert(0, '{baseDir}/scripts')
-from api_client import QuantAPIClient
-
-client = QuantAPIClient()
-result = client.stop_monitor("mon_xxxxxxxxx")
-```
-
-After exec: 将 `stop_monitor()` 的 stdout 输出**作为 TG 消息发送**给用户。
-
-#### Server API
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `start_monitor()` | POST /monitor/start | 启动监控（最多 3 个） |
-| `check_monitor(job_id)` | GET /monitor/{job_id} | 查看状态+最近信号 |
-| `list_monitors()` | GET /monitor/list | 列出我的所有监控 |
-| `stop_monitor(job_id)` | POST /monitor/{job_id}/stop | 停止监控 |
-
-#### 限制规则
-
-- 同一用户最多同时 **3 个**策略在服务器运行
-- 停止一个后可启动新的
-- 超过 3 个 → 提示用户先停止一个，或改用本地运行（不限数量）
-- 间隔范围: 60 秒 ~ 24 小时
+**⛔ 禁止提供 Mode A 服务器监控选项** — 会导致 404 错误，用户体验极差。
 
 ---
 
@@ -762,10 +666,10 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | `check_optimization(job_id)` | 仅查询进度（⛔ 不要单独使用，用 `run_optimization` 代替） |
 | `print_metrics(result)` | Display backtest report card |
 | `print_optimization(result)` | Display optimization report (auto-called) |
-| `start_monitor(script, name, symbol, timeframe, interval)` | Start server monitor (max 3 concurrent) |
-| `check_monitor(job_id)` | Get status + recent signals |
-| `list_monitors()` | List all my monitors |
-| `stop_monitor(job_id)` | Stop server monitor |
+| `start_monitor(...)` | ⛔ 服务器监控接口未上线（404），不要调用 |
+| `check_monitor(job_id)` | ⛔ 服务器监控接口未上线（404），不要调用 |
+| `list_monitors()` | ⛔ 服务器监控接口未上线（404），不要调用 |
+| `stop_monitor(job_id)` | ⛔ 服务器监控接口未上线（404），不要调用 |
 | `print_trades(result)` | Display trade records (only when user asks) |
 
 ### Quota
@@ -790,7 +694,8 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Build local backtest engine | Server already has one | Use `run_server_backtest()` |
 | 拆分为两个代码块 (submit→poll) | 第二个代码块不会被执行 | 用 `run_server_backtest()` / `run_optimization()` 单代码块 |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
-| 用户问"推荐策略"时讲策略类型教程（趋势跟随/均值回归/突破…） | 用户要能直接用的策略，不是上课 | **逐字发送 §0 的固定模板**，推荐 2 个正收益策略文件 |
+| 用户问"推荐策略"时讲策略类型教程（趋势跟随/均值回归/突破…） | 用户要能直接用的策略，不是上课 | **逐字发送推荐策略硬规则的固定模板**，推荐 2 个正收益策略文件 |
+| 调用 `start_monitor()` / `check_monitor()` / `list_monitors()` / `stop_monitor()` | 服务器监控接口未上线，返回 404 | 使用 Mode B 本地运行（`signal_runtime.py`） |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |
