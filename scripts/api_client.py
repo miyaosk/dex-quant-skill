@@ -564,6 +564,76 @@ class QuantAPIClient:
                 print(f"\n❌ 优化失败: {progress.get('error', '未知错误')}")
                 return progress
 
+    def submit_optimization(
+        self,
+        script_content: str,
+        params: list[dict],
+        strategy_name: str = "",
+        symbol: str = "BTCUSDT",
+        timeframe: str = "4h",
+        start_date: str = "",
+        end_date: str = "",
+        initial_capital: float = 100_000.0,
+        leverage: int = 3,
+        fee_rate: float = 0.0005,
+        slippage_bps: float = 5.0,
+        margin_mode: str = "isolated",
+        direction: str = "long_short",
+        method: str = "grid",
+        max_combinations: int = 200,
+        fitness_metric: str = "sharpe_ratio",
+    ) -> str:
+        """提交优化任务，立即返回 job_id（不等待结果）。"""
+        payload = {
+            "script_content": script_content,
+            "params": params,
+            "strategy_name": strategy_name,
+            "symbol": symbol, "timeframe": timeframe,
+            "start_date": start_date, "end_date": end_date,
+            "initial_capital": initial_capital, "leverage": leverage,
+            "fee_rate": fee_rate, "slippage_bps": slippage_bps,
+            "margin_mode": margin_mode, "direction": direction,
+            "method": method, "max_combinations": max_combinations,
+            "fitness_metric": fitness_metric,
+        }
+        resp = self._client.post(
+            f"{self.base_url}/backtest/optimize",
+            json=payload, headers=self._headers(), timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        job_id = data.get("job_id", "")
+        total = data.get("total_combinations", 0)
+        print(f"📋 优化任务已提交: {job_id} | {strategy_name} ({symbol} {timeframe}) | {method} {total}组")
+        return job_id
+
+    def check_optimization(self, job_id: str, strategy_name: str = "") -> dict:
+        """查询优化进度。completed 时自动打印报告和生成图片。"""
+        resp = self._client.get(
+            f"{self.base_url}/backtest/optimize/{job_id}",
+            headers=self._headers(), timeout=15.0,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+
+        status = result.get("status", "running")
+        completed = result.get("completed", 0)
+        failed = result.get("failed", 0)
+        total = result.get("total", 0)
+        elapsed = result.get("elapsed_ms", 0) / 1000
+        pct = result.get("progress_pct", 0)
+        best = result.get("current_best_fitness", 0)
+
+        if status == "running":
+            print(f"⏳ [{elapsed:.0f}s] {completed}/{total} 已评估 ({pct:.0f}%) | 最优 fitness={best:.4f}")
+        elif status == "completed":
+            print(f"✅ 优化完成 ({completed}组, 失败{failed}, 耗时{elapsed:.0f}s)")
+            QuantAPIClient.print_optimization(result, strategy_name=strategy_name)
+        elif status == "failed":
+            print(f"❌ 优化失败: {result.get('error', '')}")
+
+        return result
+
     @staticmethod
     def print_optimization(result: dict, strategy_name: str = "") -> None:
         """生成优化报告 PNG + caption，和回测报告同一套输出规则。"""

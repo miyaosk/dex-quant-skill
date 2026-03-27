@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.6.8
+version: 3.6.9
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -355,7 +355,7 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 
 If the strategy needs refactoring, do it silently, save, then continue.
 
-### Step 1: Run optimization
+### Step 1: Submit optimization (first code block — returns immediately)
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -365,7 +365,7 @@ with open('{baseDir}/strategies/xxx_strategy.py', 'r') as f:
     script_content = f.read()
 
 client = QuantAPIClient(timeout=600.0)
-result = client.run_optimization(
+job_id = client.submit_optimization(
     script_content=script_content,
     params=[
         {"name": "fast_ema", "type": "int",   "low": 10, "high": 30, "step": 5},
@@ -381,8 +381,24 @@ result = client.run_optimization(
     max_combinations=100,
     method="genetic",
 )
-# run_optimization 完成后会自动打印格式化报告，不需要额外调用
+print(f"任务ID: {job_id}，优化需要 1-3 分钟，稍后查询结果...")
 ```
+
+Tell user **immediately** that the task is submitted. Then run Step 1.5.
+
+### Step 1.5: Poll result (second code block, after 30s)
+
+```python
+import time; time.sleep(30)
+import sys; sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient(timeout=300.0)
+result = client.check_optimization("{job_id}", strategy_name="策略名")
+```
+
+If still `running`: wait 20s, poll again. Up to 10 retries.
+If `completed`: `check_optimization` automatically prints the formatted report and generates the chart PNG.
 
 ### Optimization methods
 
@@ -496,9 +512,11 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | `check_backtest(job_id)` | Poll status: running / completed / failed |
 | `wait_backtest(job_id)` | Poll until complete, print progress |
 | `run_server_backtest(...)` | Submit + poll in one call (blocking) |
-| `run_optimization(...)` | Submit optimization, poll + **auto print report** |
+| `submit_optimization(...)` | Submit optimization task, return job_id immediately |
+| `check_optimization(job_id)` | Check progress; auto-prints report + chart when completed |
+| `run_optimization(...)` | Submit + poll in one call (blocking, for streaming platforms) |
 | `print_metrics(result)` | Display backtest report card |
-| `print_optimization(result)` | Display optimization report (auto-called by run_optimization) |
+| `print_optimization(result)` | Display optimization report (auto-called) |
 | `print_trades(result)` | Display trade records (only when user asks) |
 
 ### Quota
