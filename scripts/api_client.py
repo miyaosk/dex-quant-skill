@@ -1320,6 +1320,140 @@ class QuantAPIClient:
         """兼容旧调用，现在 print_metrics 已包含结论"""
         pass
 
+    # ═══════════════ 策略监控 (服务器端) ═══════════════
+
+    def start_monitor(
+        self,
+        script_content: str,
+        strategy_name: str = "",
+        symbol: str = "BTCUSDT",
+        timeframe: str = "4h",
+        interval_seconds: int = 14400,
+        risk_rules: dict | None = None,
+    ) -> dict:
+        """
+        启动服务器端策略监控（占 1 个免费配额，共 3 个）。
+
+        服务器定时执行策略脚本 generate_signals(mode='live')，
+        存储可执行信号供客户端轮询。
+
+        返回: {"job_id": "mon_xxx", "status": "running", "quota_used": 1, ...}
+        """
+        if risk_rules is None:
+            risk_rules = {"min_confidence": 0.6, "max_position_pct": 10.0, "max_concurrent": 3}
+
+        payload = {
+            "script_content": script_content,
+            "strategy_name": strategy_name,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "interval_seconds": interval_seconds,
+            "risk_rules": risk_rules,
+        }
+
+        resp = self._client.post(f"{self.base_url}/monitor/start", json=payload, headers=self._headers())
+        if resp.status_code == 429:
+            data = resp.json()
+            print(f"\n❌ 免费配额已满（3/3），请先停止一个监控任务")
+            print(f"   用 client.list_monitors() 查看运行中的任务")
+            return data
+        resp.raise_for_status()
+        data = resp.json()
+
+        print(f"\n{'━' * 50}")
+        print(f"  ✅ 监控已启动")
+        print(f"  📋 Job ID:  {data['job_id']}")
+        print(f"  📊 策略:    {data.get('strategy_name', strategy_name)}")
+        print(f"  🪙 交易对:  {symbol}")
+        print(f"  ⏱  间隔:    {interval_seconds}s ({interval_seconds/3600:.1f}h)")
+        print(f"  📦 配额:    {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
+        print(f"{'━' * 50}")
+
+        return data
+
+    def stop_monitor(self, job_id: str) -> dict:
+        """停止服务器端监控任务（释放配额）。"""
+        resp = self._client.post(f"{self.base_url}/monitor/{job_id}/stop", headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+
+        print(f"\n  ⏹ 监控已停止: {job_id}")
+        print(f"  📦 配额: {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
+
+        return data
+
+    def list_monitors(self) -> dict:
+        """列出我的所有监控任务。"""
+        resp = self._client.get(f"{self.base_url}/monitor/list", headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+
+        monitors = data.get("monitors", [])
+        quota_used = data.get("quota_used", 0)
+        quota_max = data.get("quota_max", 3)
+
+        print(f"\n{'━' * 60}")
+        print(f"  📡 策略监控列表 | 配额 {quota_used}/{quota_max}")
+        print(f"{'━' * 60}")
+
+        if not monitors:
+            print(f"  （无运行中的监控任务）")
+        else:
+            for m in monitors:
+                status_icon = "🟢" if m["status"] == "running" else "⏹"
+                interval_h = m["interval_seconds"] / 3600
+                print(
+                    f"  {status_icon} {m['job_id']} | {m['strategy_name']:<20} | "
+                    f"{m['symbol']} {m['timeframe']} | "
+                    f"每{interval_h:.1f}h | "
+                    f"信号:{m['total_signals']} | "
+                    f"轮次:{m['total_cycles']}"
+                )
+                if m.get("last_run_at"):
+                    print(f"     最后执行: {m['last_run_at']}")
+
+        print(f"{'━' * 60}")
+        return data
+
+    def check_monitor(self, job_id: str) -> dict:
+        """查看监控任务状态 + 最近信号。"""
+        resp = self._client.get(f"{self.base_url}/monitor/{job_id}", headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+
+        status_icon = "🟢" if data["status"] == "running" else "⏹"
+        interval_h = data["interval_seconds"] / 3600
+
+        print(f"\n{'━' * 55}")
+        print(f"  {status_icon} 监控状态: {data['status']}")
+        print(f"  📋 Job:      {data['job_id']}")
+        print(f"  📊 策略:     {data['strategy_name']}")
+        print(f"  🪙 交易对:   {data['symbol']} {data['timeframe']}")
+        print(f"  ⏱  间隔:     每 {interval_h:.1f}h")
+        print(f"  🔄 已执行:   {data['total_cycles']} 轮")
+        print(f"  📈 累计信号: {data['total_signals']} 个")
+        if data.get("last_run_at"):
+            print(f"  🕐 最后执行: {data['last_run_at']}")
+        if data.get("last_error"):
+            print(f"  ❌ 最后错误: {data['last_error']}")
+        print(f"{'━' * 55}")
+
+        last_signals = data.get("last_signals", [])
+        if last_signals:
+            print(f"\n  📡 最近信号 ({len(last_signals)} 个):")
+            for s in last_signals[-5:]:
+                action = s.get("action", "?")
+                direction = s.get("direction", "?")
+                symbol = s.get("symbol", "?")
+                confidence = s.get("confidence", 0)
+                price = s.get("price_at_signal", 0)
+                reason = s.get("reason", "")[:40]
+                icon = "🟢" if action == "buy" else "🔴"
+                print(f"    {icon} {action} {direction} {symbol} @ {price:.2f} | conf={confidence:.2f} | {reason}")
+            print()
+
+        return data
+
     # ═══════════════ 生命周期 ═══════════════
 
     def close(self):

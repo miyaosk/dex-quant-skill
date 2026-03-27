@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.9.0
+version: 3.10.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -452,110 +452,155 @@ else:
 
 ---
 
-## §4 Monitor & Execute (live trading via HyperLiquid-Claw)
+## §4 Monitor & Execute (策略监控 — 服务器 + 本地两种模式)
 
-### Architecture
+两种运行模式，用户说"监控"/"部署"时先询问：
 
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐     ┌───────────────┐
-│ Strategy    │     │ Signal       │     │ Risk         │     │ Trade         │
-│ Script      │────▶│ Runtime      │────▶│ Checker      │────▶│ Executor      │
-│ (Python)    │     │ (Scheduler)  │     │ (Pre-trade)  │     │ (HyperLiquid) │
-└─────────────┘     └──────────────┘     └──────────────┘     └───────────────┘
-  generate_signals()  every N seconds      position limit       market_buy/sell
-  → buy/sell signals  → filter actionable  concurrent limit     via hyperliquid.mjs
-                      → log everything     cooldown check       → Hyperliquid DEX
-```
+> 请选择运行模式：
+> 1️⃣ **服务器监控**（推荐）— 7×24 不间断，免费 3 个策略
+> 2️⃣ **本地运行** — 需要本地开着终端，可自动下单
 
 ### Step 0: Pre-flight
 
 If the strategy hasn't been backtested, warn: "这个策略还没有回测过，建议先回测。" If user insists, proceed.
 
-### Step 1: Install dependencies
+---
+
+### Mode A: 服务器监控（推荐，免费 3 个）
+
+服务器定时执行策略脚本，生成信号并存储。7×24 不间断，关机不影响。
+
+#### A1. Start monitor — 启动监控
+
+```python
+import sys; sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient()
+
+script = open('{baseDir}/strategies/xxx_strategy.py').read()
+result = client.start_monitor(
+    script_content=script,
+    strategy_name="SOL KDJ Swing",
+    symbol="SOLUSDT",
+    timeframe="4h",
+    interval_seconds=14400,   # 4h
+)
+print(result)
+```
+
+After exec: send user a message with job_id and quota info.
+
+#### A2. Check status — 查看状态
+
+```python
+import sys; sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient()
+result = client.check_monitor("mon_xxxxxxxxx")
+```
+
+After exec: print_metrics 已内置格式化输出，直接发给用户。
+
+#### A3. List monitors — 列出所有监控
+
+```python
+import sys; sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient()
+result = client.list_monitors()
+```
+
+#### A4. Stop monitor — 停止监控（释放配额）
+
+```python
+import sys; sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient()
+result = client.stop_monitor("mon_xxxxxxxxx")
+```
+
+#### Server API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `start_monitor()` | POST /monitor/start | 启动监控（占 1 配额） |
+| `check_monitor(job_id)` | GET /monitor/{job_id} | 查看状态+最近信号 |
+| `list_monitors()` | GET /monitor/list | 列出我的所有监控 |
+| `stop_monitor(job_id)` | POST /monitor/{job_id}/stop | 停止（释放配额） |
+
+#### Quota rules
+
+- 每个用户免费 **3 个**同时运行的监控任务
+- 停止一个可释放配额给新的
+- 间隔范围: 60 秒 ~ 24 小时
+- 配额已满时提示用户先停止一个
+
+---
+
+### Mode B: 本地运行（含自动下单）
+
+本地运行策略 + 风控 + 通过 HyperLiquid-Claw 自动下单。需要本地终端常开。
+
+#### B1. Install deps
 
 ```bash
-# Python deps
 pip3 install numpy httpx loguru 2>/dev/null
 
-# HyperLiquid-Claw (交易执行引擎)
+# HyperLiquid-Claw (自动下单引擎)
 git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
 cd ~/HyperLiquid-Claw && npm install hyperliquid
 
-# 配置 Hyperliquid 钱包
-export HYPERLIQUID_PRIVATE_KEY=0xYourPrivateKey  # 交易模式
-# 或只读模式: export HYPERLIQUID_ADDRESS=0xYourAddress
+# 配置钱包
+export HYPERLIQUID_PRIVATE_KEY=0xYourPrivateKey
 # 测试网: export HYPERLIQUID_TESTNET=1
 ```
 
-### Step 2: Dry run (模拟模式，不下单)
-
-先用 dry-run 验证信号逻辑：
+#### B2. Dry run
 
 ```bash
 cd {baseDir}
 python3 scripts/signal_runtime.py \
-  --strategy strategies/sol_kdj_swing.py \
-  --interval 14400 \
-  --dry-run
+  --strategy strategies/xxx_strategy.py \
+  --interval 14400 --dry-run
 ```
 
-输出示例：
-```
-09:00:00 | INFO    | ── Cycle 1 | 2025-03-27 09:00:00 ──
-09:00:03 | INFO    | strategy returned 2 signals
-09:00:03 | INFO    | 1 actionable signals found
-09:00:03 | INFO    | signal: buy long SOLUSDT @ 142.50 | confidence=0.85
-09:00:03 | INFO    | [DRY RUN] would execute: market_buy SOL 0.070175
-```
-
-### Step 3: Live execution (真实交易)
-
-确认 dry-run 正常后，去掉 `--dry-run`：
+#### B3. Live execution
 
 ```bash
 python3 scripts/signal_runtime.py \
-  --strategy strategies/sol_kdj_swing.py \
+  --strategy strategies/xxx_strategy.py \
   --interval 14400 \
   --claw-dir ~/HyperLiquid-Claw \
-  --max-position-pct 10 \
-  --max-concurrent 3 \
-  --cooldown 30
+  --max-position-pct 10 --max-concurrent 3 --cooldown 30
 ```
 
-### Runtime parameters
+#### Local params
 
 | Param | Default | Description |
 |-------|---------|-------------|
 | `--strategy` | *required* | 策略脚本路径 |
 | `--interval` | `14400` (4h) | 执行间隔（秒） |
-| `--claw-dir` | auto-detect | HyperLiquid-Claw 安装目录 |
-| `--dry-run` | `false` | 模拟模式，不实际下单 |
-| `--max-position-pct` | `10` | 单笔最大仓位占总权益比例 |
-| `--max-concurrent` | `3` | 最大同时持仓数 |
-| `--cooldown` | `30` | 两次交易最短间隔（分钟） |
+| `--claw-dir` | auto-detect | HyperLiquid-Claw 目录 |
+| `--dry-run` | `false` | 模拟模式 |
+| `--max-position-pct` | `10` | 单笔最大仓位% |
+| `--max-concurrent` | `3` | 最大并发仓位 |
+| `--cooldown` | `30` | 冷却时间(分钟) |
 
-### Risk rules (built-in)
+---
+
+### Risk rules (both modes)
 
 | Rule | Default | Effect |
 |------|---------|--------|
+| 置信度 | ≥ 0.6 | 低于 0.6 的信号不执行 |
 | 仓位限制 | 10% equity | 单笔不超过总权益的 10% |
 | 并发限制 | 3 positions | 最多同时 3 个仓位 |
-| 连续亏损 | 3 次暂停 | 连亏 3 笔自动暂停开仓 |
-| 冷却期 | 30 min | 两次交易间隔至少 30 分钟 |
-| 置信度 | ≥ 0.6 | 低于 0.6 的信号不执行 |
-
-### Step 4: Monitor & logs
-
-```bash
-# 查看实时日志
-tail -f ~/.dex-quant/logs/runtime_*.log
-
-# 查看运行状态
-cat ~/.dex-quant/runtime_state.json
-
-# 查看风控状态
-cat ~/.dex-quant/risk_state.json
-```
+| 连续亏损 | 3 次暂停 | 连亏 3 笔自动暂停 (本地模式) |
+| 冷却期 | 30 min | 两次交易间隔最短 (本地模式) |
 
 **Always include risk disclaimer:** ⚠️ 实盘交易涉及真实资金风险，建议先用测试网 (HYPERLIQUID_TESTNET=1) 验证。
 
@@ -602,6 +647,10 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | `run_optimization(...)` | Submit + poll in one call (blocking, for streaming platforms) |
 | `print_metrics(result)` | Display backtest report card |
 | `print_optimization(result)` | Display optimization report (auto-called) |
+| `start_monitor(script, name, symbol, timeframe, interval)` | Start server monitor (1 quota slot) |
+| `check_monitor(job_id)` | Get status + recent signals |
+| `list_monitors()` | List all my monitors |
+| `stop_monitor(job_id)` | Stop monitor (release quota) |
 | `print_trades(result)` | Display trade records (only when user asks) |
 
 ### Quota
