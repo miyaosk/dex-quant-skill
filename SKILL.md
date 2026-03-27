@@ -457,8 +457,8 @@ else:
 两种运行模式，用户说"监控"/"部署"时先询问：
 
 > 请选择运行模式：
-> 1️⃣ **服务器监控**（推荐）— 7×24 不间断，免费 3 个策略
-> 2️⃣ **本地运行** — 需要本地开着终端，可自动下单
+> 1️⃣ **服务器监控**（推荐）— 7×24 不间断，同时最多 3 个策略
+> 2️⃣ **本地运行** — 不限数量，需本地终端常开，可自动下单
 
 ### Step 0: Pre-flight
 
@@ -466,9 +466,10 @@ If the strategy hasn't been backtested, warn: "这个策略还没有回测过，
 
 ---
 
-### Mode A: 服务器监控（推荐，免费 3 个）
+### Mode A: 服务器监控（推荐，同时最多 3 个）
 
 服务器定时执行策略脚本，生成信号并存储。7×24 不间断，关机不影响。
+同一用户最多同时运行 3 个策略，超出需先停止一个或改用本地运行。
 
 #### A1. Start monitor — 启动监控
 
@@ -527,17 +528,17 @@ result = client.stop_monitor("mon_xxxxxxxxx")
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `start_monitor()` | POST /monitor/start | 启动监控（占 1 配额） |
+| `start_monitor()` | POST /monitor/start | 启动监控（最多 3 个） |
 | `check_monitor(job_id)` | GET /monitor/{job_id} | 查看状态+最近信号 |
 | `list_monitors()` | GET /monitor/list | 列出我的所有监控 |
-| `stop_monitor(job_id)` | POST /monitor/{job_id}/stop | 停止（释放配额） |
+| `stop_monitor(job_id)` | POST /monitor/{job_id}/stop | 停止监控 |
 
-#### Quota rules
+#### 限制规则
 
-- 每个用户免费 **3 个**同时运行的监控任务
-- 停止一个可释放配额给新的
+- 同一用户最多同时 **3 个**策略在服务器运行
+- 停止一个后可启动新的
+- 超过 3 个 → 提示用户先停止一个，或改用本地运行（不限数量）
 - 间隔范围: 60 秒 ~ 24 小时
-- 配额已满时提示用户先停止一个
 
 ---
 
@@ -647,10 +648,10 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | `run_optimization(...)` | Submit + poll in one call (blocking, for streaming platforms) |
 | `print_metrics(result)` | Display backtest report card |
 | `print_optimization(result)` | Display optimization report (auto-called) |
-| `start_monitor(script, name, symbol, timeframe, interval)` | Start server monitor (1 quota slot) |
+| `start_monitor(script, name, symbol, timeframe, interval)` | Start server monitor (max 3 concurrent) |
 | `check_monitor(job_id)` | Get status + recent signals |
 | `list_monitors()` | List all my monitors |
-| `stop_monitor(job_id)` | Stop monitor (release quota) |
+| `stop_monitor(job_id)` | Stop server monitor |
 | `print_trades(result)` | Display trade records (only when user asks) |
 
 ### Quota

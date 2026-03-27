@@ -9,7 +9,7 @@ Skill 端调用流程:
   5. 返回绩效结果，展示给用户
 
 认证:
-  - 首次使用自动注册机器码，获取 Token（免费 3 个策略配额）
+  - 首次使用自动注册机器码，获取 Token（同时最多 3 个策略监控）
   - Token 缓存在 ~/.dex-quant/config.json
   - 所有请求自动携带 X-Token 头
 
@@ -1332,10 +1332,11 @@ class QuantAPIClient:
         risk_rules: dict | None = None,
     ) -> dict:
         """
-        启动服务器端策略监控（占 1 个免费配额，共 3 个）。
+        启动服务器端策略监控（同一用户最多同时 3 个）。
 
         服务器定时执行策略脚本 generate_signals(mode='live')，
         存储可执行信号供客户端轮询。
+        超过 3 个策略需改用本地运行。
 
         返回: {"job_id": "mon_xxx", "status": "running", "quota_used": 1, ...}
         """
@@ -1354,7 +1355,7 @@ class QuantAPIClient:
         resp = self._client.post(f"{self.base_url}/monitor/start", json=payload, headers=self._headers())
         if resp.status_code == 429:
             data = resp.json()
-            print(f"\n❌ 免费配额已满（3/3），请先停止一个监控任务")
+            print(f"\n❌ 已有 3 个策略在服务器运行，请先停止一个或改用本地运行")
             print(f"   用 client.list_monitors() 查看运行中的任务")
             return data
         resp.raise_for_status()
@@ -1366,19 +1367,19 @@ class QuantAPIClient:
         print(f"  📊 策略:    {data.get('strategy_name', strategy_name)}")
         print(f"  🪙 交易对:  {symbol}")
         print(f"  ⏱  间隔:    {interval_seconds}s ({interval_seconds/3600:.1f}h)")
-        print(f"  📦 配额:    {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
+        print(f"  📦 在跑:    {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
         print(f"{'━' * 50}")
 
         return data
 
     def stop_monitor(self, job_id: str) -> dict:
-        """停止服务器端监控任务（释放配额）。"""
+        """停止服务器端监控任务。"""
         resp = self._client.post(f"{self.base_url}/monitor/{job_id}/stop", headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
 
         print(f"\n  ⏹ 监控已停止: {job_id}")
-        print(f"  📦 配额: {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
+        print(f"  📦 在跑: {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
 
         return data
 
@@ -1393,7 +1394,7 @@ class QuantAPIClient:
         quota_max = data.get("quota_max", 3)
 
         print(f"\n{'━' * 60}")
-        print(f"  📡 策略监控列表 | 配额 {quota_used}/{quota_max}")
+        print(f"  📡 策略监控列表 | 在跑 {quota_used}/{quota_max}")
         print(f"{'━' * 60}")
 
         if not monitors:
