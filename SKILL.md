@@ -40,16 +40,14 @@ Detect the user's intent and execute the matching workflow straight through.
 
 当用户说"优化"/"调参"/"优化这个策略"/"优化下"时，你的回复**必须且只能是以下内容**（逐字复制，不要改写、不要加分析、不要先给建议）：
 
-> ━━━ ⚙️ 参数优化 ━━━
-> 选择算法：
-> 1️⃣ `genetic` 遗传算法 ← 推荐
-> 2️⃣ `bayesian` 贝叶斯
-> 3️⃣ `grid` 网格穷举
-> 4️⃣ `random` 随机搜索
-> 5️⃣ `annealing` 模拟退火
-> 6️⃣ `pso` 粒子群
-> ━━━━━━━━━━━━━━━━━━
-> 回复数字或名称开始
+> 好的，我们用服务器算法自动搜索最优参数。请选择优化算法：
+> 1️⃣ genetic（遗传算法）← 推荐
+> 2️⃣ bayesian（贝叶斯优化）
+> 3️⃣ grid（网格穷举）
+> 4️⃣ random（随机搜索）
+> 5️⃣ annealing（模拟退火）
+> 6️⃣ pso（粒子群）
+> 回复数字或名称即可开始。
 
 **然后等用户回复，不要做任何其他事情。**
 
@@ -180,13 +178,12 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 
 策略文件保存后，**发一条 TG 消息**给用户（不是代码块，直接发文本消息）：
 
-> ━━━ ✅ 策略已生成 ━━━
-> `策略` {strategy_name}
-> `交易对` {SYMBOL} · {TIMEFRAME}
-> `入场` {entry 一句话}
-> `出场` {exit 一句话}
-> `文件` {file_path}
-> ━━━━━━━━━━━━━━━━━━
+> ✅ 策略已生成
+> 📊 策略: {strategy_name}
+> 🪙 交易对: {SYMBOL} · {TIMEFRAME}
+> 📈 入场: {entry 一句话}
+> 📉 出场: {exit 一句话}
+> 📁 文件: {file_path}
 > 要回测看看效果吗？
 
 ### Recommended strategies (pre-built, in `{baseDir}/strategies/`)
@@ -268,10 +265,7 @@ print(f"任务ID: {job_id}，等待 15 秒后查询结果...")
 
 **⚠ 执行完 Step 1 后，立即发一条 TG 消息给用户**（直接发文本，不要放代码块里）：
 
-> ━━━ ⏳ 回测中 ━━━
-> `任务` {job_id}
-> `预计` 15 秒出结果
-> ━━━━━━━━━━━━━━━
+> ⏳ 已提交回测，任务 ID: {job_id}，预计 15 秒出结果...
 
 然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的 TG 消息。
 
@@ -422,12 +416,7 @@ print(f"任务ID: {job_id}，优化需要 1-3 分钟，稍后查询结果...")
 
 **⚠ 执行完 Step 1 后，立即发一条 TG 消息给用户：**
 
-> ━━━ ⏳ 优化中 ━━━
-> `任务` {job_id}
-> `算法` {method}
-> `参数` {n} 组
-> `预计` 1-3 分钟
-> ━━━━━━━━━━━━━━━
+> ⏳ 优化任务已提交 (job_id: {job_id})，{method} 算法，{n} 组参数，预计 1-3 分钟...
 
 然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的 TG 消息。
 
@@ -503,19 +492,21 @@ If the strategy hasn't been backtested, warn: "这个策略还没有回测过，
 
 When user says "监控"/"部署"/"跑起来"/"上线", you MUST present this message verbatim:
 
-> ━━━ 📡 策略监控 ━━━
-> 选择运行模式：
+> 请选择运行模式：
 >
-> 1️⃣ `服务器` 推荐
-> 📌 7×24 不间断 · 最多 3 个
-> 📌 只生成信号，不自动下单
+> 1️⃣ 服务器监控（推荐）
+> · 7×24 不间断运行，关机不影响
+> · 同时最多 3 个策略
+> · 定时执行策略 → 生成信号 → 存入数据库
+> · ⚠️ 不会自动下单，你可以查看信号后手动交易
 >
-> 2️⃣ `本地` 含自动下单
-> 📌 终端常开 · 数量不限
-> 📌 自动下单到 Hyperliquid
-> 📌 需提供钱包私钥
-> ━━━━━━━━━━━━━━━━━━
-> 回复 1 或 2
+> 2️⃣ 本地运行（含自动下单）
+> · 需要本地终端常开，关机就停
+> · 数量不限
+> · 定时执行策略 → 风控检查 → 自动下单到 Hyperliquid
+> · ⚠️ 需要提供 Hyperliquid 钱包私钥
+>
+> 回复 1 或 2 选择。
 
 Wait for user to choose before proceeding.
 
@@ -523,18 +514,18 @@ Wait for user to choose before proceeding.
 
 If user chose Mode B (local + auto-trade), MUST ask:
 
-> ━━━ 🔑 交易配置 ━━━
-> 自动下单需要：
-> `私钥` Hyperliquid 钱包（0x 开头）
-> `网络` 建议先用测试网验证
-> ━━━━━━━━━━━━━━━━━━
+> 自动下单需要以下信息：
+>
+> 1. Hyperliquid 钱包私钥 — 用于签名交易（0x 开头）
+> 2. 是否使用测试网？ — 建议先用测试网验证
+>
 > 🔒 安全说明：
 > · 私钥仅存在你本地环境变量中
 > · 不会上传到任何服务器或云端
 > · 不会写入日志、数据库或配置文件
 > · 仅在本地签名交易时使用
-> ━━━━━━━━━━━━━━━━━━
-> 请提供私钥，或先用测试网？
+>
+> 请提供你的钱包私钥，或者先用测试网试试？
 
 If user chose Mode A (server), skip this step — server mode only generates signals, does not trade.
 
