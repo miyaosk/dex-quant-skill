@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.14.0
+version: 3.15.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -35,6 +35,7 @@ Detect the user's intent and execute the matching workflow straight through.
 
 | User says (任意一个即触发) | Workflow | Your FIRST response |
 |-----------|----------|---------------------|
+| "推荐策略" "有什么策略" "推荐" "有现成的吗" "不会写策略" "不知道怎么写" "有没有好的策略" "recommend" "suggestions" "哪个策略好" "试试什么" | **Recommend** | **直接推荐正收益策略（见下方 §0）** |
 | "建策略" "新策略" "做一个策略" "写策略" "做策略" "生成策略" "设计策略" "帮我写一个" "create" "new strategy" "想做一个xx策略" "帮我做" | Create | Extract params → generate script (§1) |
 | "回测" "测一下" "测试" "跑一下" "试试" "看看效果" "backtest" "test" "历史验证" "验证一下" "跑个回测" "看看能不能赚钱" | Backtest | Execute backtest code (§2) |
 | "优化" "调参" "优化参数" "优化策略" "优化下" "optimize" "tune" "调优" "提升" "改进参数" | **Optimize** | **⚠️ 见下方硬规则** |
@@ -217,17 +218,49 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 > 📁 文件: {file_path}
 > 要回测看看效果吗？
 
-### Recommended strategies (pre-built, in `{baseDir}/strategies/`)
+## §0 Recommend Strategy（推荐策略 — 最高优先级响应）
 
-If user asks "有什么推荐策略" or wants to quickly try a strategy, suggest these:
+**触发条件：** 用户问"有什么推荐策略"、"推荐"、"有现成的吗"、"不知道怎么写"、"哪个好"等。
+
+**⚠️ 硬规则：直接推荐具体策略文件，不要泛泛讲策略类型教程！**
+
+你的回复**必须且只能是以下格式**（逐字复制模板，填入数据）：
+
+> 📊 这是我实测过有正收益的策略，直接用就行：
+>
+> 1️⃣ **SOL RSI 动量策略** (`sol_rsi_momentum.py`)
+> 🪙 SOLUSDT · 4h
+> 📈 RSI>65 追涨 + RSI<35 追跌，EMA50 趋势过滤
+> 💰 2025 回测: **+2.27%**
+>
+> 2️⃣ **BTC RSI 动量策略** (`btc_rsi_momentum.py`)
+> 🪙 BTCUSDT · 4h
+> 📈 RSI>70 极端动量入场，EMA50 过滤，4x ATR trailing
+> 💰 2025 回测: **+1.40%**（B 级评分）
+>
+> 选一个数字，我帮你回测看最新效果，或者直接部署监控 👇
+> 1 — 回测 SOL 策略
+> 2 — 回测 BTC 策略
+> 3 — 我想自己写一个新策略
+
+**NEVER do these when user asks for recommendations：**
+- ❌ 不要讲"趋势跟随、均值回归、突破策略"等通用策略类型教程
+- ❌ 不要给一大堆文字解释优缺点
+- ❌ 不要说"你可以试试 EMA 双均线"这种没有具体文件的建议
+- ✅ 直接推荐上面 2 个已验证正收益的策略文件
+- ✅ 给用户明确的下一步操作选项
+
+### All pre-built strategies (in `{baseDir}/strategies/`)
 
 | Strategy file | Symbol | Style | 2025 回测 | Tested grade |
 |--------------|--------|-------|-----------|--------------|
 | `sol_rsi_momentum.py` | SOLUSDT | RSI>65 追涨 + RSI<35 追跌，EMA50 趋势过滤，trailing stop | **+2.27%** | C (7/14) |
-| `sol_kdj_swing.py` | SOLUSDT | KDJ 超卖反弹 + EMA50 趋势过滤，多空双向 | **+2.09%** | C (6/14) |
 | `btc_rsi_momentum.py` | BTCUSDT | RSI>70 极端动量入场，EMA50 过滤，4x ATR trailing | **+1.40%** | **B (10/14)** |
+| `sol_kdj_swing.py` | SOLUSDT | KDJ 超卖反弹 + EMA50 趋势过滤，多空双向 | +2.09% | C (6/14) |
 | `btc_trend_pullback.py` | BTCUSDT | EMA50 趋势 + EMA20 回踩入场，ATR trailing | -1.21% | C (8/14) |
 | `btc_macd_trend.py` | BTCUSDT | MACD 金叉/死叉 + EMA100 方向过滤 | -1.84% | C (7/14) |
+
+**只推荐前 2 个正收益策略。** 其余策略仅在用户主动问起时提及。
 
 All strategies have `PARAMS` dict for optimization. Suggest: "可以用优化功能搜索最优参数"
 
