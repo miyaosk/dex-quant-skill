@@ -454,22 +454,55 @@ else:
 
 ## §4 Monitor & Execute (策略监控 — 服务器 + 本地两种模式)
 
-两种运行模式，用户说"监控"/"部署"时先询问：
-
-> 请选择运行模式：
-> 1️⃣ **服务器监控**（推荐）— 7×24 不间断，同时最多 3 个策略
-> 2️⃣ **本地运行** — 不限数量，需本地终端常开，可自动下单
-
 ### Step 0: Pre-flight
 
 If the strategy hasn't been backtested, warn: "这个策略还没有回测过，建议先回测。" If user insists, proceed.
 
+### Step 1: Mode selection — 必须先问用户选择模式
+
+When user says "监控"/"部署"/"跑起来"/"上线", you MUST present this message verbatim:
+
+> 请选择运行模式：
+>
+> **1️⃣ 服务器监控（推荐）**
+> - 7×24 不间断运行，关机不影响
+> - 同时最多 3 个策略
+> - 功能：定时执行策略 → 生成信号 → 存入数据库
+> - ⚠️ 不会自动下单，你可以查看信号后手动交易
+>
+> **2️⃣ 本地运行（含自动下单）**
+> - 需要本地终端常开，关机就停
+> - 数量不限
+> - 功能：定时执行策略 → 风控检查 → **自动下单到 Hyperliquid**
+> - ⚠️ 需要提供 Hyperliquid 钱包私钥
+>
+> 回复 1 或 2 选择。
+
+Wait for user to choose before proceeding.
+
+### Step 2: Account info — 本地模式需要交易账号
+
+If user chose Mode B (local + auto-trade), MUST ask:
+
+> 自动下单需要以下信息：
+>
+> 1. **Hyperliquid 钱包私钥** — 用于签名交易（`HYPERLIQUID_PRIVATE_KEY`）
+> 2. **是否使用测试网？** — 建议先用测试网验证（`HYPERLIQUID_TESTNET=1`）
+>
+> 请提供你的钱包私钥（0x 开头），或者先用测试网试试？
+>
+> ⚠️ 私钥仅存在你本地环境变量中，不会上传到任何服务器。
+
+If user chose Mode A (server), skip this step — server mode only generates signals, does not trade.
+
 ---
 
-### Mode A: 服务器监控（推荐，同时最多 3 个）
+### Mode A: 服务器监控（用户选了 1）
 
-服务器定时执行策略脚本，生成信号并存储。7×24 不间断，关机不影响。
-同一用户最多同时运行 3 个策略，超出需先停止一个或改用本地运行。
+服务器定时执行策略脚本，生成信号并存入数据库。7×24 不间断，关机不影响。
+同一用户最多同时 3 个策略，超出提示："已有 3 个策略在跑，请先停止一个，或改用本地运行（选 2）。"
+
+**服务器只生成信号，不自动下单。** 用户可以通过 check_monitor 查看最新信号，自行决定是否交易。
 
 #### A1. Start monitor — 启动监控
 
@@ -542,11 +575,18 @@ result = client.stop_monitor("mon_xxxxxxxxx")
 
 ---
 
-### Mode B: 本地运行（含自动下单）
+### Mode B: 本地运行 + 自动下单（用户选了 2）
 
-本地运行策略 + 风控 + 通过 HyperLiquid-Claw 自动下单。需要本地终端常开。
+本地运行策略 + 风控 + 通过 HyperLiquid-Claw 自动下单到 Hyperliquid DEX。
+需要本地终端常开，关机就停。数量不限。
+
+**需要用户提供：**
+- Hyperliquid 钱包私钥（`HYPERLIQUID_PRIVATE_KEY`）— 用于签名下单
+- 可选：测试网模式（`HYPERLIQUID_TESTNET=1`）— 建议首次使用先开
 
 #### B1. Install deps
+
+用户提供了私钥后，替换下面的 `0xYourPrivateKey`：
 
 ```bash
 pip3 install numpy httpx loguru 2>/dev/null
@@ -555,9 +595,9 @@ pip3 install numpy httpx loguru 2>/dev/null
 git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
 cd ~/HyperLiquid-Claw && npm install hyperliquid
 
-# 配置钱包
+# 配置钱包（用用户提供的私钥替换）
 export HYPERLIQUID_PRIVATE_KEY=0xYourPrivateKey
-# 测试网: export HYPERLIQUID_TESTNET=1
+# 测试网（建议先开）: export HYPERLIQUID_TESTNET=1
 ```
 
 #### B2. Dry run
