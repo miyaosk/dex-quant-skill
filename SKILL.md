@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.10.0
+version: 3.12.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -40,14 +40,16 @@ Detect the user's intent and execute the matching workflow straight through.
 
 当用户说"优化"/"调参"/"优化这个策略"/"优化下"时，你的回复**必须且只能是以下内容**（逐字复制，不要改写、不要加分析、不要先给建议）：
 
-> 好的，我们用服务器算法自动搜索最优参数。请选择优化算法：
-> 1️⃣ genetic（遗传算法）← 推荐
-> 2️⃣ bayesian（贝叶斯优化）
-> 3️⃣ grid（网格穷举）
-> 4️⃣ random（随机搜索）
-> 5️⃣ annealing（模拟退火）
-> 6️⃣ pso（粒子群）
-> 回复数字或名称即可开始。
+> ━━━ ⚙️ 参数优化 ━━━
+> 选择算法：
+> 1️⃣ `genetic` 遗传算法 ← 推荐
+> 2️⃣ `bayesian` 贝叶斯
+> 3️⃣ `grid` 网格穷举
+> 4️⃣ `random` 随机搜索
+> 5️⃣ `annealing` 模拟退火
+> 6️⃣ `pso` 粒子群
+> ━━━━━━━━━━━━━━━━━━
+> 回复数字或名称开始
 
 **然后等用户回复，不要做任何其他事情。**
 
@@ -73,6 +75,38 @@ Detect the user's intent and execute the matching workflow straight through.
 - Choice of timeframe, symbol, capital (use defaults)
 - Whether to show metrics (always show)
 - Whether to retry on error (always retry once)
+
+---
+
+## ⚠️ Output Delivery Rule (Telegram)
+
+用户通过 Telegram 使用本 Skill。你执行代码后，**必须把 stdout 输出作为 TG 消息发送给用户**，而不是仅仅"展示执行结果"。
+
+### 核心流程
+
+```
+代码执行 → stdout 输出（print）→ AI 捕获 → 作为 TG 消息发送给用户
+```
+
+### 具体规则
+
+1. **纯文本输出** — 执行代码后，将 `print()` 输出的格式化内容**原样作为 TG 消息发送**，不要包裹在代码块里，不要加额外解释
+2. **图片 + caption** — 当代码生成了图片（`_equity_chart_path` / `_optimization_chart_path`），**发送图片附件**，caption 用 `_caption` 字段的文本
+3. **禁止只展示不发送** — 不要把执行结果放在代码块或"执行结果"框里给用户看，用户在 TG 上看不到这些
+4. **禁止重述/改写** — `print()` 输出已经是格式化好的 tag 样式，直接发，不要用自己的话重写
+5. **一条消息原则** — 每个操作结果只发一条 TG 消息（或一条图片消息），不要拆成多条
+
+### 消息类型对照
+
+| 场景 | 发什么 | 怎么发 |
+|------|--------|--------|
+| 策略已生成 | 文本消息 | stdout 输出原样发送 |
+| 回测已提交 | 文本消息 | stdout 输出原样发送 |
+| 回测完成 | **图片** + caption | 发图片附件，caption = `_caption` |
+| 优化已提交 | 文本消息 | stdout 输出原样发送 |
+| 优化完成 | **图片** + caption | 发图片附件，caption = `_caption` |
+| 监控启动/停止/列表/状态 | 文本消息 | stdout 输出原样发送 |
+| 选择提示（算法/模式） | 文本消息 | 逐字发送模板内容 |
 
 ---
 
@@ -142,12 +176,18 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
     return {"strategy_name": "EMA Cross Strategy", "signals": signals}
 ```
 
-### Step 3: Output
+### Step 3: Output → 发 TG 消息
 
-Tell user:
-1. One-sentence summary of what the strategy does
-2. File path where it was saved
-3. Suggest next step: "要回测看看效果吗？" — if yes, proceed to §2
+策略文件保存后，**发一条 TG 消息**给用户（不是代码块，直接发文本消息）：
+
+> ━━━ ✅ 策略已生成 ━━━
+> `策略` {strategy_name}
+> `交易对` {SYMBOL} · {TIMEFRAME}
+> `入场` {entry 一句话}
+> `出场` {exit 一句话}
+> `文件` {file_path}
+> ━━━━━━━━━━━━━━━━━━
+> 要回测看看效果吗？
 
 ### Recommended strategies (pre-built, in `{baseDir}/strategies/`)
 
@@ -226,10 +266,14 @@ job_id = client.submit_backtest(
 print(f"任务ID: {job_id}，等待 15 秒后查询结果...")
 ```
 
-**⚠ 执行完 Step 1 后，你必须立即发一条消息给用户：**
-> ⏳ 已提交回测，任务 ID: {job_id}，预计 15 秒出结果...
+**⚠ 执行完 Step 1 后，立即发一条 TG 消息给用户**（直接发文本，不要放代码块里）：
 
-然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的消息。
+> ━━━ ⏳ 回测中 ━━━
+> `任务` {job_id}
+> `预计` 15 秒出结果
+> ━━━━━━━━━━━━━━━
+
+然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的 TG 消息。
 
 ### Step 2: Poll result (second code block, after 15s)
 
@@ -248,18 +292,18 @@ else:
     print(f"❌ 回测失败: {bt.get('error', '')}")
 ```
 
-**⚠ 代码执行后你 MUST 这样回复：**
+**⚠ 代码执行后你 MUST 发 TG 消息：**
 1. 读取 `bt["_equity_chart_path"]` 的 PNG 文件
-2. 用 `bt["_caption"]` 的文字作为图片 caption
-3. **只发一条图片附件消息**（caption 里已包含关键指标）
-4. 不要单独发文字消息（会被系统 heartbeat 吞掉）
+2. 用 `bt["_caption"]` 的文字作为 caption
+3. **发一条 TG 图片消息**（图片附件 + caption）
+4. caption 里已包含所有指标，不需要额外文字
 
-**⛔ 禁止行为（违反任何一条 = 不合格）：**
-- ❌ 自己写"结果"/"结论"/"核心指标"/"我的判断"等分析段落
-- ❌ 用自己的话重述收益率、Sharpe、胜率等数据
+**⛔ 禁止行为：**
+- ❌ 自己写分析段落（"结果"/"结论"/"我的判断"）
+- ❌ 用自己的话重述指标数据
 - ❌ 忽略 `_caption` 另起炉灶
-- ❌ 不发图片只发文字
-- ❌ 在图片消息之外再发一条文字总结
+- ❌ 只发文字不发图片
+- ❌ 图片消息之外再发一条文字消息
 
 If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
 
@@ -290,19 +334,11 @@ If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
 
 `print_trades(bt)` prints full trade table — only needed if user asks for more details.
 
-After completion, suggest next step **based on grade**:
-  - A/B 级 → "效果不错！要优化参数进一步提升吗？" (→ §3) 或 "可以考虑小仓实盘"
-  - C/D 级 → suggest optimization with algorithm recommendation:
-    "可以用参数优化提升表现，我们支持 6 种优化算法：
-    🧬 genetic（遗传算法）— 参数多时推荐，默认首选
-    🎯 bayesian（贝叶斯）— 快速收敛，评估次数少
-    📊 grid（网格穷举）— 参数少时用，≤200 组合
-    🎲 random（随机搜索）— 探索性调参
-    🔥 annealing（模拟退火）— 跳出局部最优
-    🌊 pso（粒子群）— 连续参数优化
-    要用哪种算法优化？推荐 genetic。"
-  - F 级 → "策略失败，建议重新设计策略逻辑" (→ §1)
-  - Zero trades → "没有交易信号，入场条件可能太严格。" (→ §1)
+After completion, suggest next step **based on grade** (append to caption, keep concise):
+  - A/B 级 → `#优秀` 效果不错，可以直接部署监控
+  - C/D 级 → `#待优化` 建议用参数优化提升，推荐 genetic
+  - F 级 → `#失败` 建议重新设计策略逻辑
+  - Zero trades → `#无信号` 入场条件可能太严格
 
 ### Strategy evaluation standard
 
@@ -384,10 +420,16 @@ job_id = client.submit_optimization(
 print(f"任务ID: {job_id}，优化需要 1-3 分钟，稍后查询结果...")
 ```
 
-**⚠ 执行完 Step 1 后，你必须立即发一条消息给用户：**
-> ⏳ 优化任务已提交 (job_id: {job_id})，genetic 算法，100 组参数，预计 1-3 分钟...
+**⚠ 执行完 Step 1 后，立即发一条 TG 消息给用户：**
 
-然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的消息。
+> ━━━ ⏳ 优化中 ━━━
+> `任务` {job_id}
+> `算法` {method}
+> `参数` {n} 组
+> `预计` 1-3 分钟
+> ━━━━━━━━━━━━━━━
+
+然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的 TG 消息。
 
 ### Step 2: Poll result (second code block, after 30s)
 
@@ -409,23 +451,22 @@ else:
     print(f"❌ 优化失败: {result.get('error', '')}")
 ```
 
-**⚠ 代码执行后你 MUST 这样回复：**
+**⚠ 代码执行后你 MUST 发 TG 消息：**
 
 - If `completed`:
   1. 读取 `result["_optimization_chart_path"]` 的 PNG 文件
-  2. 用 `result["_caption"]` 的文字作为图片 caption
-  3. **只发一条图片附件消息**（caption 里已包含指标、排名、结论和下一步）
-  4. 不要单独发文字消息
+  2. 用 `result["_caption"]` 的文字作为 caption
+  3. **发一条 TG 图片消息**（图片附件 + caption）
+  4. 不要额外发文字消息
 
-- If `running`: 发消息告诉用户当前进度 (e.g. "⏳ 已评估 40/100 (40%)，继续等待...")，wait 20s, poll again in a third block. Up to 10 retries.
+- If `running`: 发一条 TG 文本消息告诉用户当前进度 (e.g. "⏳ 已评估 40/100 (40%)，继续等待...")，wait 20s, poll again. Up to 10 retries.
 
-**⛔ 禁止行为（违反任何一条 = 不合格）：**
-- ❌ 自己写"结论先说"/"我的判断"/"一句话评价"等分析段落
-- ❌ 把 Top 5 改成 bullet point 列表
+**⛔ 禁止行为：**
+- ❌ 自己写分析段落
 - ❌ 用自己的话重述参数和指标
 - ❌ 忽略 `_caption` 另起炉灶
-- ❌ 不发图片只发文字
-- ❌ 在图片消息之外再发一条文字总结
+- ❌ 只发文字不发图片
+- ❌ 图片消息之外再发文字消息
 
 **⛔ 禁止使用 `run_optimization()`（单代码块模式）** — 它会阻塞整个执行过程，用户看不到任何进度。必须用上面的 submit → poll 两步拆分。
 
@@ -462,21 +503,19 @@ If the strategy hasn't been backtested, warn: "这个策略还没有回测过，
 
 When user says "监控"/"部署"/"跑起来"/"上线", you MUST present this message verbatim:
 
-> 请选择运行模式：
+> ━━━ 📡 策略监控 ━━━
+> 选择运行模式：
 >
-> **1️⃣ 服务器监控（推荐）**
-> - 7×24 不间断运行，关机不影响
-> - 同时最多 3 个策略
-> - 功能：定时执行策略 → 生成信号 → 存入数据库
-> - ⚠️ 不会自动下单，你可以查看信号后手动交易
+> 1️⃣ `服务器` 推荐
+> 📌 7×24 不间断 · 最多 3 个
+> 📌 只生成信号，不自动下单
 >
-> **2️⃣ 本地运行（含自动下单）**
-> - 需要本地终端常开，关机就停
-> - 数量不限
-> - 功能：定时执行策略 → 风控检查 → **自动下单到 Hyperliquid**
-> - ⚠️ 需要提供 Hyperliquid 钱包私钥
->
-> 回复 1 或 2 选择。
+> 2️⃣ `本地` 含自动下单
+> 📌 终端常开 · 数量不限
+> 📌 自动下单到 Hyperliquid
+> 📌 需提供钱包私钥
+> ━━━━━━━━━━━━━━━━━━
+> 回复 1 或 2
 
 Wait for user to choose before proceeding.
 
@@ -484,14 +523,18 @@ Wait for user to choose before proceeding.
 
 If user chose Mode B (local + auto-trade), MUST ask:
 
-> 自动下单需要以下信息：
->
-> 1. **Hyperliquid 钱包私钥** — 用于签名交易（`HYPERLIQUID_PRIVATE_KEY`）
-> 2. **是否使用测试网？** — 建议先用测试网验证（`HYPERLIQUID_TESTNET=1`）
->
-> 请提供你的钱包私钥（0x 开头），或者先用测试网试试？
->
-> ⚠️ 私钥仅存在你本地环境变量中，不会上传到任何服务器。
+> ━━━ 🔑 交易配置 ━━━
+> 自动下单需要：
+> `私钥` Hyperliquid 钱包（0x 开头）
+> `网络` 建议先用测试网验证
+> ━━━━━━━━━━━━━━━━━━
+> 🔒 安全说明：
+> · 私钥仅存在你本地环境变量中
+> · 不会上传到任何服务器或云端
+> · 不会写入日志、数据库或配置文件
+> · 仅在本地签名交易时使用
+> ━━━━━━━━━━━━━━━━━━
+> 请提供私钥，或先用测试网？
 
 If user chose Mode A (server), skip this step — server mode only generates signals, does not trade.
 
@@ -523,7 +566,7 @@ result = client.start_monitor(
 print(result)
 ```
 
-After exec: send user a message with job_id and quota info.
+After exec: 将 `start_monitor()` 的 stdout 输出**作为 TG 消息发送**给用户。
 
 #### A2. Check status — 查看状态
 
@@ -535,7 +578,7 @@ client = QuantAPIClient()
 result = client.check_monitor("mon_xxxxxxxxx")
 ```
 
-After exec: print_metrics 已内置格式化输出，直接发给用户。
+After exec: 将 `check_monitor()` 的 stdout 输出**作为 TG 消息发送**给用户。
 
 #### A3. List monitors — 列出所有监控
 
@@ -547,6 +590,8 @@ client = QuantAPIClient()
 result = client.list_monitors()
 ```
 
+After exec: 将 `list_monitors()` 的 stdout 输出**作为 TG 消息发送**给用户。
+
 #### A4. Stop monitor — 停止监控（释放配额）
 
 ```python
@@ -556,6 +601,8 @@ from api_client import QuantAPIClient
 client = QuantAPIClient()
 result = client.stop_monitor("mon_xxxxxxxxx")
 ```
+
+After exec: 将 `stop_monitor()` 的 stdout 输出**作为 TG 消息发送**给用户。
 
 #### Server API
 
@@ -717,8 +764,10 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
-| Send text and image as separate messages | Heartbeat will delete the text message | 只发一条图片附件（caption 含指标摘要） |
-| Use `![](path)` for chart image | Telegram can't render local paths | 用平台的文件/图片发送功能作为附件发送 |
+| Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |
+| Use `![](path)` for chart image | TG 无法渲染本地路径 | 用 TG 图片发送功能作为附件发送 |
+| 把 stdout 放在代码块里展示 | 用户在 TG 看不到代码块结果 | 捕获 stdout → 作为 TG 文本消息发送 |
+| 自己写分析替代 print 输出 | print 输出已格式化好 | 原样发送 stdout，不改写 |
 
 ---
 
@@ -726,7 +775,7 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 
 1. **Backtest first, optimize second.** Get a working strategy before tuning.
 2. **Two code blocks for backtest.** User sees "submitted" immediately.
-3. **Always show full report card.** `print_metrics()` / `print_optimization()` — never paraphrase.
+3. **所有输出发 TG 消息。** 执行代码后，stdout 输出原样发 TG 文本消息；有图片发 TG 图片消息 + caption。
 4. **Retry once on failure.** Automatic, no need to ask.
 5. **Indicators return numpy arrays.** `arr[i]` not `.iloc[i]`.
 6. **Timestamps: `str(df.iloc[i]["datetime"])`** — never row index.

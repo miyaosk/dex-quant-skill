@@ -305,7 +305,11 @@ class QuantAPIClient:
         resp.raise_for_status()
         job_id = resp.json()["job_id"]
         print(
-            f"📋 回测已提交: {job_id} | {strategy_name} ({symbol} {timeframe}, {start_date} → {end_date})",
+            f"━━━ 📋 回测已提交 ━━━\n"
+            f"  `任务` {job_id}\n"
+            f"  `策略` {strategy_name}\n"
+            f"  `交易对` {symbol} {timeframe} · {start_date} → {end_date}\n"
+            f"━━━━━━━━━━━━━━━━━━━━",
             flush=True,
         )
         return job_id
@@ -329,11 +333,11 @@ class QuantAPIClient:
         elapsed_s = job.get("elapsed_ms", 0) / 1000
 
         if status == "running":
-            print(f"⏳ [{elapsed_s:.0f}s] {stage} ({progress:.0f}%)", flush=True)
+            print(f"  ⏳ `{stage}` {progress:.0f}% · {elapsed_s:.0f}s", flush=True)
         elif status == "completed":
-            print(f"✅ 回测完成（耗时 {elapsed_s:.1f}s）", flush=True)
+            print(f"  ✅ `完成` 耗时 {elapsed_s:.1f}s", flush=True)
         elif status == "failed":
-            print(f"❌ 回测失败: {job.get('error', '未知错误')}", flush=True)
+            print(f"  ❌ `失败` {job.get('error', '未知错误')}", flush=True)
 
         return job
 
@@ -505,7 +509,7 @@ class QuantAPIClient:
         job_id = submit_result.get("job_id")
         total = submit_result.get("total_combinations", 0)
         logger.info("任务已提交 | job_id={} | 共{}种组合", job_id, total)
-        print(f"\n⏳ 优化任务已提交 (job_id: {job_id})，共 {total} 种参数组合\n")
+        print(f"\n━━━ ⏳ 优化中 ━━━\n  `任务` {job_id} · {total}组\n━━━━━━━━━━━━━━━\n")
 
         last_completed = 0
         printed_milestones = set()
@@ -607,7 +611,13 @@ class QuantAPIClient:
         data = resp.json()
         job_id = data.get("job_id", "")
         total = data.get("total_combinations", 0)
-        print(f"📋 优化任务已提交: {job_id} | {strategy_name} ({symbol} {timeframe}) | {method} {total}组")
+        print(
+            f"━━━ ⚙️ 优化已提交 ━━━\n"
+            f"  `任务` {job_id}\n"
+            f"  `策略` {strategy_name} · {symbol} {timeframe}\n"
+            f"  `算法` {method} · {total}组\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
+        )
         return job_id
 
     def check_optimization(self, job_id: str, strategy_name: str = "") -> dict:
@@ -661,15 +671,14 @@ class QuantAPIClient:
         method_label = method_names.get(method, method)
 
         lines = [
-            f"🔧 {name} 参数优化报告",
-            f"━━━━━━━━━━━━━━━━━━━━",
-            f"🧬 算法 {method_label}  ⏱️ 耗时 {elapsed:.0f}s",
-            f"📊 评估 {success}/{total}组  ❌ 失败 {failed}组",
+            f"━━━ ⚙️ {name} 优化 ━━━",
+            f"  `算法` {method_label} · `耗时` {elapsed:.0f}s",
+            f"  `评估` {success}/{total}组 · `失败` {failed}组",
         ]
 
         if not results:
-            lines.append("━━━━━━━━━━━━━━━━━━━━")
-            lines.append("❌ 无有效结果，所有参数组合均失败")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("  ❌ 无有效结果，所有组合均失败")
             caption = "\n".join(lines)
             result["_caption"] = caption
             print(f"\n{caption}")
@@ -684,17 +693,14 @@ class QuantAPIClient:
         top_params = top.get("params", {})
 
         ret_icon = "📈" if top_ret >= 0 else "📉"
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
-        lines.append(f"🥇 最优参数:")
-        params_str = "  ".join(f"{k}={v}" for k, v in top_params.items())
+        lines.append(f"━━━ 🥇 最优参数 ━━━")
+        params_str = " · ".join(f"`{k}` {v}" for k, v in top_params.items())
         lines.append(f"  {params_str}")
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
-        lines.append(f"{ret_icon} 收益 {top_ret:+.2%}  📐 Sharpe {top_sharpe:.2f}")
-        lines.append(f"⚡ 回撤 {top_dd:.2%}  🎯 胜率 {top_wr:.0%}  🔄 交易 {top_trades}笔")
+        lines.append(f"  {ret_icon} `收益` {top_ret:+.2%} · `Sharpe` {top_sharpe:.2f}")
+        lines.append(f"  `回撤` {top_dd:.2%} · `胜率` {top_wr:.0%} · `交易` {top_trades}笔")
 
         if len(results) > 1:
-            lines.append(f"━━━━━━━━━━━━━━━━━━━━")
-            lines.append(f"📋 Top {min(len(results), 5)} 排名")
+            lines.append(f"━━━ 📋 Top {min(len(results), 5)} ━━━")
             medals = ["🥇", "🥈", "🥉"]
             for r in results[:5]:
                 rank = r.get("rank", 1)
@@ -704,21 +710,20 @@ class QuantAPIClient:
                 dd = abs(r.get("max_drawdown_pct", 0))
                 wr = r.get("win_rate", 0)
                 trades = r.get("total_trades", 0)
-                lines.append(f"  {medal} {ret:+.2%} Sharpe {sharpe:.2f} 回撤 {dd:.2%} 胜率 {wr:.0%} {trades}笔")
+                lines.append(f"  {medal} `收益` {ret:+.2%} · `Sharpe` {sharpe:.2f} · `回撤` {dd:.2%} · `胜率` {wr:.0%} · {trades}笔")
 
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         if top_sharpe >= 1.5 and top_ret > 0.1:
-            lines.append(f"✅ 优化结果优秀，建议用最优参数回测验证后小仓实盘")
+            lines.append(f"  `#优秀` 建议回测验证后小仓实盘")
         elif top_sharpe >= 0.5 and top_ret > 0:
-            lines.append(f"⚠️ 优化结果尚可，建议用最优参数回测验证")
+            lines.append(f"  `#尚可` 建议回测验证最优参数")
         elif top_ret > 0:
-            lines.append(f"⚠️ 优化结果偏弱（Sharpe {top_sharpe:.2f}），建议改进策略结构后重新优化")
+            lines.append(f"  `#偏弱` Sharpe {top_sharpe:.2f}，建议改进策略后重优化")
         else:
-            lines.append(f"❌ 最优参数仍亏损，建议重新设计策略逻辑")
+            lines.append(f"  `#失败` 最优参数仍亏损，建议重新设计")
 
-        lines.append(f"")
-        lines.append(f"🔄 下一步: 回复「回测」用最优参数跑完整回测验证")
+        lines.append(f"  `#下一步` 回复「回测」验证最优参数")
 
         caption = "\n".join(lines)
         result["_caption"] = caption
@@ -729,12 +734,8 @@ class QuantAPIClient:
 
         print(f"\n{caption}")
         if chart_path:
-            print(f"\n" + "=" * 50)
-            print(f"[SYSTEM] 优化报告图片已生成: {chart_path}")
-            print(f"[SYSTEM] 你必须将上面的图片作为附件发送给用户")
-            print(f"[SYSTEM] caption 使用上面 ━━ 之间的文字")
-            print(f"[SYSTEM] ❌ 禁止自己写总结/分析/判断，只发图片+caption")
-            print(f"=" * 50)
+            print(f"\n[SYSTEM] 图片: {chart_path}")
+            print(f"[SYSTEM] 发送图片附件 + 上方 caption，禁止额外文字")
 
     @staticmethod
     def _print_optimization_chart(results: list, strategy_name: str, method_label: str,
@@ -896,18 +897,16 @@ class QuantAPIClient:
         if chart_path:
             result["_equity_chart_path"] = chart_path
 
-        sign = "+" if ret else ""
         ret_icon = "📈" if ret >= 0 else "📉"
         lines = [
-            f"📊 {name} 回测报告",
-            f"━━━━━━━━━━━━━━━━━━━━",
-            f"💰 本金 {init_cap:,.0f} → 余额 {bal:,.0f}",
-            f"{ret_icon} 收益 {ret:+.2%}  📐 Sharpe {m.get('sharpe_ratio', 0):.2f}  📐 Sortino {m.get('sortino_ratio', 0):.2f}",
-            f"⚡ 回撤 {abs(m.get('max_drawdown_pct', 0)):.2%}  🎯 胜率 {m.get('win_rate', 0):.1%}  ⚖️ 盈亏比 {m.get('profit_loss_ratio', 0):.2f}",
-            f"🔄 交易 {m.get('total_trades', 0)}笔  🏗️ 杠杆 {leverage}x  📦 仓位 {mode_label}",
+            f"━━━ 📊 {name} ━━━",
+            f"  `本金` {init_cap:,.0f} → `余额` {bal:,.0f}",
+            f"  {ret_icon} `收益` {ret:+.2%} · `Sharpe` {m.get('sharpe_ratio', 0):.2f} · `Sortino` {m.get('sortino_ratio', 0):.2f}",
+            f"  `回撤` {abs(m.get('max_drawdown_pct', 0)):.2%} · `胜率` {m.get('win_rate', 0):.1%} · `盈亏比` {m.get('profit_loss_ratio', 0):.2f}",
+            f"  `交易` {m.get('total_trades', 0)}笔 · `杠杆` {leverage}x · `仓位` {mode_label}",
         ]
         if m.get('liquidation_count', 0) > 0:
-            lines.append(f"💥 爆仓 {m['liquidation_count']} 次")
+            lines.append(f"  💥 `爆仓` {m['liquidation_count']} 次")
 
         conclusion = result.get("conclusion", "")
         conclusion_map = {
@@ -917,17 +916,16 @@ class QuantAPIClient:
         }
 
         items = evaluation.get("items", [])
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━")
         if items:
             score_val = evaluation.get("score", 0)
             max_score = evaluation.get("max_score", 14)
-            lines.append(f"🏆 评分 {score_val}/{max_score}  {grade}级")
+            lines.append(f"  🏆 `评分` {score_val}/{max_score} · {grade}级")
             for item in items:
                 s = item["score"]
                 dot = "🟢" if s == 2 else ("🟡" if s == 1 else "🔴")
-                label = "优" if s == 2 else ("及格" if s == 1 else "差")
-                lines.append(f"{dot} {item['name']} {item['value']}（{label}）")
-            lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+                lines.append(f"  {dot} `{item['name']}` {item['value']}")
+            lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         if grade_label:
             conclusion_text = f"[{grade}] {grade_label}"
@@ -949,50 +947,40 @@ class QuantAPIClient:
         else:
             advice = "可优化参数或重新设计入场/出场逻辑"
 
-        lines.append(f"📋 {conclusion_text}，{advice}")
+        lines.append(f"  📋 `结论` {conclusion_text}")
+        lines.append(f"  💡 `建议` {advice}")
 
         trades = result.get("trades", [])
         if trades:
             opens = [t for t in trades if t.get("action") == "open"]
             closes = [t for t in trades if t.get("action") != "open"]
-            lines.append(f"")
-            lines.append(f"📝 交易摘要 ({len(opens)}开/{len(closes)}平，前5笔)")
+            lines.append(f"━━━ 📝 交易摘要 ({len(opens)}开/{len(closes)}平) ━━━")
             for t in trades[:5]:
                 dt = t.get('datetime', '')[:16].replace('T', ' ')
                 action = "开" if t.get('action') == 'open' else "平"
                 side = "多" if t.get('side') == 'long' else "空"
                 price = t.get('price', 0)
                 pnl = t.get('pnl', 0)
-                pnl_s = f"盈亏{pnl:+.1f}" if t.get('action') != 'open' else ""
-                lines.append(f"  {dt} {action}{side} {price:,.1f} {pnl_s}")
+                pnl_s = f" `盈亏` {pnl:+.1f}" if t.get('action') != 'open' else ""
+                lines.append(f"  {dt} {action}{side} {price:,.1f}{pnl_s}")
             if len(trades) > 5:
                 lines.append(f"  ...还有 {len(trades) - 5} 笔")
 
-        lines.append("")
-        lines.append("━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━")
         if grade == "F" or m.get('total_trades', 0) == 0:
-            lines.append("🔄 下一步: 策略逻辑需要重新设计，回复「新策略」重新开始")
+            lines.append("  `#失败` 策略需重新设计 → 回复「新策略」")
         else:
-            lines.append("🔧 下一步: 可用服务器算法自动搜索最优参数，请选择:")
-            lines.append("  1️⃣ genetic（遗传算法）← 推荐")
-            lines.append("  2️⃣ bayesian（贝叶斯）")
-            lines.append("  3️⃣ grid（网格穷举）")
-            lines.append("  4️⃣ random（随机搜索）")
-            lines.append("  5️⃣ annealing（模拟退火）")
-            lines.append("  6️⃣ pso（粒子群）")
-            lines.append("回复数字或算法名即可开始优化")
+            lines.append("  `#下一步` 参数优化 → 回复数字选算法")
+            lines.append("  1️⃣ `genetic` ← 推荐  2️⃣ `bayesian`  3️⃣ `grid`")
+            lines.append("  4️⃣ `random`  5️⃣ `annealing`  6️⃣ `pso`")
 
         caption = "\n".join(lines)
         result["_caption"] = caption
 
         print(f"\n{caption}")
         if chart_path:
-            print(f"\n" + "=" * 50)
-            print(f"[SYSTEM] 回测报告图片已生成: {chart_path}")
-            print(f"[SYSTEM] 你必须将上面的图片作为附件发送给用户")
-            print(f"[SYSTEM] caption 使用上面 ━━ 之间的文字")
-            print(f"[SYSTEM] ❌ 禁止自己写总结/分析/判断，只发图片+caption")
-            print(f"=" * 50)
+            print(f"\n[SYSTEM] 图片: {chart_path}")
+            print(f"[SYSTEM] 发送图片附件 + 上方 caption，禁止额外文字")
 
     @staticmethod
     def _print_evaluation(evaluation: dict) -> None:
@@ -1256,8 +1244,7 @@ class QuantAPIClient:
         fig.savefig(filepath, dpi=150, facecolor=fig.get_facecolor())
         plt.close(fig)
 
-        print(f"\n  📈 回测报告图已保存: {filepath}")
-        print(f"  👉 请将此图片作为附件发送给用户")
+        print(f"\n[SYSTEM] 图片已保存: {filepath}")
         return filepath
 
     @staticmethod
@@ -1355,20 +1342,21 @@ class QuantAPIClient:
         resp = self._client.post(f"{self.base_url}/monitor/start", json=payload, headers=self._headers())
         if resp.status_code == 429:
             data = resp.json()
-            print(f"\n❌ 已有 3 个策略在服务器运行，请先停止一个或改用本地运行")
-            print(f"   用 client.list_monitors() 查看运行中的任务")
+            print(f"\n━━━ ❌ 已满 ━━━")
+            print(f"  已有 3 个策略在跑，请先停止一个或改用本地运行")
+            print(f"━━━━━━━━━━━━━━━")
             return data
         resp.raise_for_status()
         data = resp.json()
 
-        print(f"\n{'━' * 50}")
-        print(f"  ✅ 监控已启动")
-        print(f"  📋 Job ID:  {data['job_id']}")
-        print(f"  📊 策略:    {data.get('strategy_name', strategy_name)}")
-        print(f"  🪙 交易对:  {symbol}")
-        print(f"  ⏱  间隔:    {interval_seconds}s ({interval_seconds/3600:.1f}h)")
-        print(f"  📦 在跑:    {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
-        print(f"{'━' * 50}")
+        interval_h = interval_seconds / 3600
+        print(f"\n━━━ ✅ 监控已启动 ━━━")
+        print(f"  `任务` {data['job_id']}")
+        print(f"  `策略` {data.get('strategy_name', strategy_name)}")
+        print(f"  `交易对` {symbol}")
+        print(f"  `间隔` 每 {interval_h:.1f}h")
+        print(f"  `在跑` {data.get('quota_used', '?')}/3")
+        print(f"━━━━━━━━━━━━━━━━━━━━")
 
         return data
 
@@ -1378,8 +1366,10 @@ class QuantAPIClient:
         resp.raise_for_status()
         data = resp.json()
 
-        print(f"\n  ⏹ 监控已停止: {job_id}")
-        print(f"  📦 在跑: {data.get('quota_used', '?')}/{data.get('quota_max', 3)}")
+        print(f"\n━━━ ⏹ 已停止 ━━━")
+        print(f"  `任务` {job_id}")
+        print(f"  `在跑` {data.get('quota_used', '?')}/3")
+        print(f"━━━━━━━━━━━━━━━")
 
         return data
 
@@ -1391,29 +1381,23 @@ class QuantAPIClient:
 
         monitors = data.get("monitors", [])
         quota_used = data.get("quota_used", 0)
-        quota_max = data.get("quota_max", 3)
 
-        print(f"\n{'━' * 60}")
-        print(f"  📡 策略监控列表 | 在跑 {quota_used}/{quota_max}")
-        print(f"{'━' * 60}")
+        print(f"\n━━━ 📡 监控列表 ({quota_used}/3) ━━━")
 
         if not monitors:
-            print(f"  （无运行中的监控任务）")
+            print(f"  （无监控任务）")
         else:
             for m in monitors:
-                status_icon = "🟢" if m["status"] == "running" else "⏹"
+                tag = "🟢" if m["status"] == "running" else "⏹"
                 interval_h = m["interval_seconds"] / 3600
-                print(
-                    f"  {status_icon} {m['job_id']} | {m['strategy_name']:<20} | "
-                    f"{m['symbol']} {m['timeframe']} | "
-                    f"每{interval_h:.1f}h | "
-                    f"信号:{m['total_signals']} | "
-                    f"轮次:{m['total_cycles']}"
-                )
+                print(f"  {tag} {m['strategy_name']}")
+                print(f"    `ID` {m['job_id']}")
+                print(f"    `交易对` {m['symbol']} {m['timeframe']} · 每{interval_h:.1f}h")
+                print(f"    `信号` {m['total_signals']} · `轮次` {m['total_cycles']}")
                 if m.get("last_run_at"):
-                    print(f"     最后执行: {m['last_run_at']}")
+                    print(f"    `最后执行` {m['last_run_at']}")
 
-        print(f"{'━' * 60}")
+        print(f"━━━━━━━━━━━━━━━━━━━━━━━━━")
         return data
 
     def check_monitor(self, job_id: str) -> dict:
@@ -1422,36 +1406,34 @@ class QuantAPIClient:
         resp.raise_for_status()
         data = resp.json()
 
-        status_icon = "🟢" if data["status"] == "running" else "⏹"
+        tag = "🟢" if data["status"] == "running" else "⏹"
         interval_h = data["interval_seconds"] / 3600
 
-        print(f"\n{'━' * 55}")
-        print(f"  {status_icon} 监控状态: {data['status']}")
-        print(f"  📋 Job:      {data['job_id']}")
-        print(f"  📊 策略:     {data['strategy_name']}")
-        print(f"  🪙 交易对:   {data['symbol']} {data['timeframe']}")
-        print(f"  ⏱  间隔:     每 {interval_h:.1f}h")
-        print(f"  🔄 已执行:   {data['total_cycles']} 轮")
-        print(f"  📈 累计信号: {data['total_signals']} 个")
+        print(f"\n━━━ {tag} {data['strategy_name']} ━━━")
+        print(f"  `ID` {data['job_id']}")
+        print(f"  `状态` {data['status']}")
+        print(f"  `交易对` {data['symbol']} {data['timeframe']} · 每{interval_h:.1f}h")
+        print(f"  `轮次` {data['total_cycles']} · `信号` {data['total_signals']}")
         if data.get("last_run_at"):
-            print(f"  🕐 最后执行: {data['last_run_at']}")
+            print(f"  `最后执行` {data['last_run_at']}")
         if data.get("last_error"):
-            print(f"  ❌ 最后错误: {data['last_error']}")
-        print(f"{'━' * 55}")
+            print(f"  `错误` {data['last_error']}")
+        print(f"━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         last_signals = data.get("last_signals", [])
         if last_signals:
-            print(f"\n  📡 最近信号 ({len(last_signals)} 个):")
+            print(f"\n━━━ 📡 最近信号 ({len(last_signals)}) ━━━")
             for s in last_signals[-5:]:
                 action = s.get("action", "?")
                 direction = s.get("direction", "?")
                 symbol = s.get("symbol", "?")
                 confidence = s.get("confidence", 0)
                 price = s.get("price_at_signal", 0)
-                reason = s.get("reason", "")[:40]
+                reason = s.get("reason", "")[:30]
                 icon = "🟢" if action == "buy" else "🔴"
-                print(f"    {icon} {action} {direction} {symbol} @ {price:.2f} | conf={confidence:.2f} | {reason}")
-            print()
+                print(f"  {icon} `{action}` {direction} {symbol} @ {price:.2f}")
+                print(f"    `置信` {confidence:.2f} · {reason}")
+            print(f"━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         return data
 
