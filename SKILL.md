@@ -1,10 +1,11 @@
 ---
 name: dex-quant-skill
-version: 3.15.0
+version: 3.16.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
-  Use when user asks to: 建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create strategy, new strategy,
+  Use when user asks to: 推荐策略, 有什么策略, 推荐, 有现成的吗, 不会写, recommend, suggestions,
+    建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create strategy, new strategy,
     回测, 测一下, 测试, 跑一下, 试试, 看看效果, backtest, test, 历史验证,
     优化, 调参, 优化参数, 优化策略, 优化下, optimize, tune,
     监控, 部署, 上线, 跑起来, 定时执行, 定时跑, 跑策略, 执行策略, 自动执行, 自动跑, 挂着跑, 定时任务, cron, run, deploy, monitor, 盯盘.
@@ -218,37 +219,42 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 > 📁 文件: {file_path}
 > 要回测看看效果吗？
 
-## §0 Recommend Strategy（推荐策略 — 最高优先级响应）
+## §0 Recommend Strategy（推荐策略）
 
-**触发条件：** 用户问"有什么推荐策略"、"推荐"、"有现成的吗"、"不知道怎么写"、"哪个好"等。
+### ⚠️ CRITICAL — 推荐策略硬规则（违反此规则 = 严重错误）
 
-**⚠️ 硬规则：直接推荐具体策略文件，不要泛泛讲策略类型教程！**
+当用户说"推荐策略"、"有什么策略"、"推荐"、"有现成的吗"、"不会写"、"不知道怎么写"、"哪个好"、"试试什么"、"recommend"、"suggestions" 时：
 
-你的回复**必须且只能是以下格式**（逐字复制模板，填入数据）：
+**你必须逐字发送以下消息，禁止改写、禁止加内容、禁止讲策略类型教程：**
 
-> 📊 这是我实测过有正收益的策略，直接用就行：
->
-> 1️⃣ **SOL RSI 动量策略** (`sol_rsi_momentum.py`)
-> 🪙 SOLUSDT · 4h
-> 📈 RSI>65 追涨 + RSI<35 追跌，EMA50 趋势过滤
-> 💰 2025 回测: **+2.27%**
->
-> 2️⃣ **BTC RSI 动量策略** (`btc_rsi_momentum.py`)
-> 🪙 BTCUSDT · 4h
-> 📈 RSI>70 极端动量入场，EMA50 过滤，4x ATR trailing
-> 💰 2025 回测: **+1.40%**（B 级评分）
->
-> 选一个数字，我帮你回测看最新效果，或者直接部署监控 👇
-> 1 — 回测 SOL 策略
-> 2 — 回测 BTC 策略
-> 3 — 我想自己写一个新策略
+```
+📊 这是我实测过有正收益的策略，直接用就行：
 
-**NEVER do these when user asks for recommendations：**
-- ❌ 不要讲"趋势跟随、均值回归、突破策略"等通用策略类型教程
-- ❌ 不要给一大堆文字解释优缺点
-- ❌ 不要说"你可以试试 EMA 双均线"这种没有具体文件的建议
-- ✅ 直接推荐上面 2 个已验证正收益的策略文件
-- ✅ 给用户明确的下一步操作选项
+1️⃣ SOL RSI 动量策略 (sol_rsi_momentum.py)
+🪙 SOLUSDT · 4h
+📈 RSI>65 追涨 + RSI<35 追跌，EMA50 趋势过滤
+💰 2025 回测: +2.27%
+
+2️⃣ BTC RSI 动量策略 (btc_rsi_momentum.py)
+🪙 BTCUSDT · 4h
+📈 RSI>70 极端动量入场，EMA50 过滤，4x ATR trailing
+💰 2025 回测: +1.40%（B 级评分）
+
+选一个数字，我帮你回测看最新效果 👇
+1 — 回测 SOL 策略
+2 — 回测 BTC 策略
+3 — 我想自己写一个新策略
+```
+
+### ⛔ 推荐策略时绝对禁止的行为
+
+| 禁止 ❌ | 为什么 | 正确做法 ✅ |
+|---------|-------|-----------|
+| 讲"趋势跟随、均值回归、突破策略"等策略类型教程 | 用户要的是能直接用的策略，不是上课 | 逐字发送上方模板 |
+| 解释各类策略的优缺点 | 用户没有问你分析，问的是推荐 | 逐字发送上方模板 |
+| 说"你可以试试 EMA 双均线"这种泛泛建议 | 没有具体文件名，用户无法操作 | 逐字发送上方模板 |
+| 自由发挥、改写模板、加自己的分析 | 模板是经过验证的最优格式 | 逐字发送上方模板 |
+| 推荐负收益策略 | 误导用户 | 只推荐 sol_rsi_momentum.py 和 btc_rsi_momentum.py |
 
 ### All pre-built strategies (in `{baseDir}/strategies/`)
 
@@ -780,6 +786,7 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Build local backtest engine | Server already has one | Use `run_server_backtest()` |
 | 拆分为两个代码块 (submit→poll) | 第二个代码块不会被执行 | 用 `run_server_backtest()` / `run_optimization()` 单代码块 |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
+| 用户问"推荐策略"时讲策略类型教程（趋势跟随/均值回归/突破…） | 用户要能直接用的策略，不是上课 | **逐字发送 §0 的固定模板**，推荐 2 个正收益策略文件 |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |
@@ -791,13 +798,14 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 
 ## Important Rules
 
-1. **Backtest first, optimize second.** Get a working strategy before tuning.
-2. **单代码块原则。** 回测用 `run_server_backtest()`，优化用 `run_optimization()`，一个代码块搞定全流程。禁止拆分为两个代码块。
-3. **所有输出发 TG 消息。** 执行代码后，stdout 输出原样发 TG 文本消息；有图片发 TG 图片消息 + caption。
-4. **Retry once on failure.** Automatic, no need to ask.
-5. **Indicators return numpy arrays.** `arr[i]` not `.iloc[i]`.
-6. **Timestamps: `str(df.iloc[i]["datetime"])`** — never row index.
-7. **`lookback` covers longest indicator.** EMA(60) → at least 61 bars warmup.
-8. **Descriptive filenames.** `btc_ema_cross_strategy.py`, not `strategy1.py`.
-9. **One strategy per file.** Never bundle.
-10. **Local deps: `httpx`, `loguru`, `matplotlib`.** Don't install numpy/pandas — server has them.
+1. **推荐策略 = 逐字发 §0 模板。** 用户问"推荐策略"/"有什么策略"时，禁止讲策略类型教程，必须直接推荐 `sol_rsi_momentum.py` 和 `btc_rsi_momentum.py`。
+2. **Backtest first, optimize second.** Get a working strategy before tuning.
+3. **单代码块原则。** 回测用 `run_server_backtest()`，优化用 `run_optimization()`，一个代码块搞定全流程。禁止拆分为两个代码块。
+4. **所有输出发 TG 消息。** 执行代码后，stdout 输出原样发 TG 文本消息；有图片发 TG 图片消息 + caption。
+5. **Retry once on failure.** Automatic, no need to ask.
+6. **Indicators return numpy arrays.** `arr[i]` not `.iloc[i]`.
+7. **Timestamps: `str(df.iloc[i]["datetime"])`** — never row index.
+8. **`lookback` covers longest indicator.** EMA(60) → at least 61 bars warmup.
+9. **Descriptive filenames.** `btc_ema_cross_strategy.py`, not `strategy1.py`.
+10. **One strategy per file.** Never bundle.
+11. **Local deps: `httpx`, `loguru`, `matplotlib`.** Don't install numpy/pandas — server has them.
