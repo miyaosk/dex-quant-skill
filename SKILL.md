@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.7.2
+version: 3.8.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -148,6 +148,18 @@ Tell user:
 1. One-sentence summary of what the strategy does
 2. File path where it was saved
 3. Suggest next step: "要回测看看效果吗？" — if yes, proceed to §2
+
+### Recommended strategies (pre-built, in `{baseDir}/strategies/`)
+
+If user asks "有什么推荐策略" or wants to quickly try a strategy, suggest these:
+
+| Strategy file | Symbol | Style | Tested grade |
+|--------------|--------|-------|--------------|
+| `sol_kdj_swing.py` | SOLUSDT | KDJ 超卖反弹 + EMA50 趋势过滤，多空双向 | **B (9/14)** |
+| `btc_trend_pullback.py` | BTCUSDT | EMA50 趋势 + EMA20 回踩入场，ATR trailing | C (8/14) |
+| `btc_macd_trend.py` | BTCUSDT | MACD 金叉/死叉 + EMA100 方向过滤 | C (7/14) |
+
+All strategies have `PARAMS` dict for optimization. Suggest: "可以用优化功能搜索最优参数"
 
 ### Sandbox rules (CRITICAL — violating these causes server backtest to fail)
 
