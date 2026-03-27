@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.18.0
+version: 3.19.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -57,7 +57,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | 优化算法选择 (1-6) | "4" / "random" / "随机" | 执行 §3 用 random 算法优化 |
 | 优化算法选择 (1-6) | "5" / "annealing" / "退火" | 执行 §3 用 annealing 算法优化 |
 | 优化算法选择 (1-6) | "6" / "pso" / "粒子" | 执行 §3 用 pso 算法优化 |
-| 监控/部署请求 | 任何 | 执行 §4 直接进入 Mode B 本地运行（服务器模式不可用） |
+| 监控/部署请求 | 任何 | 执行 §4 本地运行模式（服务器监控接口未上线） |
 | 回测报告下一步 (1-6) | "1" / "genetic" | 执行 §3 用 genetic 算法优化 |
 | 回测报告下一步 | "回测" / "再测一次" | 执行 §2 重新回测 |
 | 回测报告下一步 | "部署" / "监控" / "跑起来" | 执行 §4 监控 |
@@ -525,8 +525,9 @@ If the strategy hasn't been backtested, warn: "这个策略还没有回测过，
 
 ### Step 1: 直接进入本地运行模式
 
-**⚠️ 服务器监控模式（Mode A）当前不可用** — 服务端监控接口尚未上线（返回 404）。
-**所有监控/部署请求一律使用 Mode B（本地运行）。**
+**⚠️ 服务器监控模式当前不可用** — 服务端监控接口尚未上线（返回 404）。
+上线后服务器监控也将支持自动下单（同样需要 Hyperliquid 钱包私钥）。
+**当前所有监控/部署请求一律使用本地运行模式。**
 
 When user triggers Monitor workflow, you MUST present this message verbatim:
 
@@ -549,7 +550,7 @@ When user triggers Monitor workflow, you MUST present this message verbatim:
 
 Wait for user to provide private key before proceeding.
 
-**⛔ 禁止提供 Mode A 服务器监控选项** — 会导致 404 错误，用户体验极差。
+**⛔ 禁止调用服务器监控 API（start_monitor 等）** — 接口未上线，会返回 404。
 
 ---
 
