@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.7.1
+version: 3.7.2
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -343,7 +343,7 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 
 If the strategy needs refactoring, do it silently, save, then continue.
 
-### Step 1: Submit optimization (first code block — returns immediately)
+### Step 1: Submit (first code block)
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -373,13 +373,11 @@ print(f"任务ID: {job_id}，优化需要 1-3 分钟，稍后查询结果...")
 ```
 
 **⚠ 执行完 Step 1 后，你必须立即发一条消息给用户：**
-> ⏳ 优化任务已提交 (job_id: {job_id})，{method} 算法，预计 1-3 分钟，稍后查询...
+> ⏳ 优化任务已提交 (job_id: {job_id})，genetic 算法，100 组参数，预计 1-3 分钟...
 
-然后再执行 Step 1.5 的代码块。
+然后再执行 Step 2 的代码块。两个代码块之间必须有一条用户可见的消息。
 
-**⛔ 禁止使用 `run_optimization()`（单代码块模式）** — 它会阻塞整个执行过程，用户看不到任何进度。必须用 submit → poll 两步拆分。
-
-### Step 1.5: Poll result (second code block, after 30s)
+### Step 2: Poll result (second code block, after 30s)
 
 ```python
 import time; time.sleep(30)
@@ -388,10 +386,36 @@ from api_client import QuantAPIClient
 
 client = QuantAPIClient(timeout=300.0)
 result = client.check_optimization("{job_id}", strategy_name="策略名")
+if result["status"] == "completed":
+    pass  # check_optimization 已自动打印报告+生成图片
+elif result["status"] == "running":
+    pct = result.get("progress_pct", 0)
+    completed = result.get("completed", 0)
+    total = result.get("total", 0)
+    print(f"⏳ 还在优化中 {completed}/{total} ({pct:.0f}%)，请稍后再查询...")
+else:
+    print(f"❌ 优化失败: {result.get('error', '')}")
 ```
 
-- If `running`: 发消息告诉用户当前进度 (e.g. "⏳ 已评估 40/100 (40%)...")，wait 20s, poll again. Up to 10 retries.
-- If `completed`: `check_optimization` 自动打印报告+生成图片。
+**⚠ 代码执行后你 MUST 这样回复：**
+
+- If `completed`:
+  1. 读取 `result["_optimization_chart_path"]` 的 PNG 文件
+  2. 用 `result["_caption"]` 的文字作为图片 caption
+  3. **只发一条图片附件消息**（caption 里已包含指标、排名、结论和下一步）
+  4. 不要单独发文字消息
+
+- If `running`: 发消息告诉用户当前进度 (e.g. "⏳ 已评估 40/100 (40%)，继续等待...")，wait 20s, poll again in a third block. Up to 10 retries.
+
+**⛔ 禁止行为（违反任何一条 = 不合格）：**
+- ❌ 自己写"结论先说"/"我的判断"/"一句话评价"等分析段落
+- ❌ 把 Top 5 改成 bullet point 列表
+- ❌ 用自己的话重述参数和指标
+- ❌ 忽略 `_caption` 另起炉灶
+- ❌ 不发图片只发文字
+- ❌ 在图片消息之外再发一条文字总结
+
+**⛔ 禁止使用 `run_optimization()`（单代码块模式）** — 它会阻塞整个执行过程，用户看不到任何进度。必须用上面的 submit → poll 两步拆分。
 
 ### Optimization methods
 
@@ -413,27 +437,6 @@ result = client.check_optimization("{job_id}", strategy_name="策略名")
 | `max_drawdown` | Minimize drawdown |
 | `win_rate` | Maximize win rate |
 | `profit_factor` | Gross profit / gross loss |
-
-### Step 2: Output + apply
-
-**⚠ 代码执行后你 MUST 这样回复（和回测报告完全相同的规则）：**
-
-`run_optimization()` 完成后会自动生成：
-- `result["_optimization_chart_path"]` — PNG 图片（Top 5 排名条形图）
-- `result["_caption"]` — 格式化好的文字报告
-
-你**必须按以下步骤发送**：
-1. 读取 `result["_optimization_chart_path"]` 的 PNG 文件
-2. 用 `result["_caption"]` 的文字作为图片 caption
-3. **只发一条图片附件消息**（caption 里已包含指标、排名、结论和下一步）
-4. 不要单独发文字消息
-
-**⛔ 禁止行为（违反任何一条 = 不合格）：**
-- ❌ 自己写 "结论先说" / "我的判断" / "一句话" 等分析段落
-- ❌ 把 Top 5 改成 bullet point 列表
-- ❌ 用自己的话重述参数和指标
-- ❌ 忽略 `_caption` 另起炉灶
-- ❌ 不发图片只发文字
 
 ---
 
