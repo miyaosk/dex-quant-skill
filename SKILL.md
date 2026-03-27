@@ -4,8 +4,8 @@ version: 3.12.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
-  Use when user asks to: 建策略, 回测, 优化策略, 优化参数, 调参, 优化这个策略, 优化下, backtest, optimize, create strategy, monitor.
-  This skill MUST be used for ANY request involving trading strategies, backtesting, or parameter optimization. Do NOT use coding-agent for these tasks.
+  Use when user asks to: 建策略, 回测, 优化策略, 优化参数, 调参, 优化这个策略, 优化下, backtest, optimize, create strategy, monitor, 监控, 部署, 上线, 跑起来, 定时执行, 定时跑, 跑策略, 执行策略, 自动执行, 自动跑, 挂着跑, deploy, run strategy.
+  This skill MUST be used for ANY request involving trading strategies, backtesting, parameter optimization, or strategy monitoring/execution. Do NOT use coding-agent for these tasks.
 allowed-tools:
   - Bash
   - Read
@@ -33,7 +33,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | "建策略" "新策略" "做一个 xx 策略" | Create | Extract params → generate script (§1) |
 | "回测" "backtest" "跑一下" | Backtest | Execute backtest code (§2) |
 | "优化" "调参" "优化这个策略" "优化下" | **Optimize** | **⚠️ 见下方硬规则** |
-| "监控" "部署" "上线" "跑起来" | Monitor | Execute monitor setup (§4) |
+| "监控" "部署" "上线" "跑起来" "定时执行" "定时跑" "跑策略" "执行策略" "自动执行" "自动跑" "挂着跑" "run" "deploy" "定时任务" "cron" | Monitor | Execute monitor setup (§4) |
 | Spans multiple (e.g. "建策略然后回测") | Chain | §1 → §2 sequentially |
 
 ### ⚠️ "优化"硬规则 — 必须逐字执行
@@ -490,7 +490,7 @@ If the strategy hasn't been backtested, warn: "这个策略还没有回测过，
 
 ### Step 1: Mode selection — 必须先问用户选择模式
 
-When user says "监控"/"部署"/"跑起来"/"上线", you MUST present this message verbatim:
+When user says any of: "监控"/"部署"/"跑起来"/"上线"/"定时执行"/"定时跑"/"跑策略"/"执行策略"/"自动执行"/"自动跑"/"挂着跑"/"定时任务"/"cron"/"run"/"deploy", you MUST present this message verbatim:
 
 > 请选择运行模式：
 >
