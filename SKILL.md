@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.6.9
+version: 3.7.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -239,6 +239,13 @@ else:
 3. **只发一条图片附件消息**（caption 里已包含关键指标）
 4. 不要单独发文字消息（会被系统 heartbeat 吞掉）
 
+**⛔ 禁止行为（违反任何一条 = 不合格）：**
+- ❌ 自己写"结果"/"结论"/"核心指标"/"我的判断"等分析段落
+- ❌ 用自己的话重述收益率、Sharpe、胜率等数据
+- ❌ 忽略 `_caption` 另起炉灶
+- ❌ 不发图片只发文字
+- ❌ 在图片消息之外再发一条文字总结
+
 If still `running`: wait 10s, poll again in a third block. Up to 5 retries.
 
 ### Quick backtest (single block, for platforms with streaming output)
@@ -257,13 +264,20 @@ bt = client.run_server_backtest(
     start_date="2025-01-01", end_date="2025-12-31",
     leverage=3, initial_capital=100000, direction="long_short",
 )
-client.print_metrics(bt)
+# run_server_backtest 完成后会自动调用 print_metrics，不需要再手动调用
 ```
 
 **⚠ 代码执行后你 MUST 这样回复：**
 1. 读取 `bt["_equity_chart_path"]` 的 PNG 文件
 2. 用 `bt["_caption"]` 作为图片 caption
 3. **只发一条图片附件消息**（不要单独发文字，会被 heartbeat 吞掉）
+
+**⛔ 禁止行为（违反任何一条 = 不合格）：**
+- ❌ 自己写"结果"/"结论"/"核心指标"/"我的判断"等分析段落
+- ❌ 用自己的话重述收益率、Sharpe、胜率等数据
+- ❌ 忽略 `_caption` 另起炉灶
+- ❌ 不发图片只发文字
+- ❌ 在图片消息之外再发一条文字总结
 
 ### Backtest parameters
 

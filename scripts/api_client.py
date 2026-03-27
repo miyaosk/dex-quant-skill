@@ -418,7 +418,10 @@ class QuantAPIClient:
             direction=direction,
         )
 
-        return self.wait_backtest(job_id, poll_interval=poll_interval)
+        result = self.wait_backtest(job_id, poll_interval=poll_interval)
+        if result.get("status") == "completed":
+            self.print_metrics(result)
+        return result
 
     # ═══════════════ 参数优化 ═══════════════
 
@@ -726,8 +729,12 @@ class QuantAPIClient:
 
         print(f"\n{caption}")
         if chart_path:
-            print(f"\n📊 优化报告图片: {chart_path}")
-            print(f"👉 请将此图片作为附件发送，caption 用上面的文字")
+            print(f"\n" + "=" * 50)
+            print(f"[SYSTEM] 优化报告图片已生成: {chart_path}")
+            print(f"[SYSTEM] 你必须将上面的图片作为附件发送给用户")
+            print(f"[SYSTEM] caption 使用上面 ━━ 之间的文字")
+            print(f"[SYSTEM] ❌ 禁止自己写总结/分析/判断，只发图片+caption")
+            print(f"=" * 50)
 
     @staticmethod
     def _print_optimization_chart(results: list, strategy_name: str, method_label: str,
@@ -980,8 +987,12 @@ class QuantAPIClient:
 
         print(f"\n{caption}")
         if chart_path:
-            print(f"\n📊 报告图片: {chart_path}")
-            print(f"👉 请将此图片作为附件发送，caption 用上面的文字")
+            print(f"\n" + "=" * 50)
+            print(f"[SYSTEM] 回测报告图片已生成: {chart_path}")
+            print(f"[SYSTEM] 你必须将上面的图片作为附件发送给用户")
+            print(f"[SYSTEM] caption 使用上面 ━━ 之间的文字")
+            print(f"[SYSTEM] ❌ 禁止自己写总结/分析/判断，只发图片+caption")
+            print(f"=" * 50)
 
     @staticmethod
     def _print_evaluation(evaluation: dict) -> None:
