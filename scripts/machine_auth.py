@@ -124,17 +124,17 @@ class MachineAuth:
     def print_quota(self) -> None:
         """格式化打印配额信息"""
         q = self.check_quota()
-        print("\n" + "=" * 45)
-        print("  策略配额")
-        print("=" * 45)
-        print(f"  机器码:     {q['machine_code'][:8]}...")
-        print(f"  已用/上限:  {q['used_strategies']}/{q['max_strategies']}")
-        print(f"  剩余:       {q['remaining']}")
+        print(f"\n{'━' * 40}")
+        print(f"  📦 策略配额")
+        print(f"{'━' * 40}")
+        print(f"  🔑 机器码:    {q['machine_code'][:8]}...")
+        print(f"  📊 已用/上限: {q['used_strategies']}/{q['max_strategies']}")
+        print(f"  📋 剩余:      {q['remaining']}")
         if q.get("strategies"):
-            print("-" * 45)
+            print(f"{'━' * 40}")
             for s in q["strategies"]:
-                print(f"  - {s['name']} ({s['strategy_id']}) [{s['status']}]")
-        print("=" * 45)
+                print(f"  📌 {s['name']} ({s['strategy_id']}) [{s['status']}]")
+        print(f"{'━' * 40}")
 
     def close(self):
         self._client.close()
