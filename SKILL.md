@@ -1,17 +1,24 @@
 ---
 name: dex-quant-skill
-version: 3.29.0
+version: 3.30.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
   Use when user asks to: 推荐策略, 有什么策略, 推荐, 有现成的吗, 不会写, recommend, suggestions,
-    建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create strategy, new strategy,
+    创建策略, 创建一个策略, 创建, 建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create strategy, new strategy, 弄个策略,
     回测, 测一下, 测试, 跑一下, 试试, 看看效果, backtest, test, 历史验证,
     优化, 调参, 优化参数, 优化策略, 优化下, optimize, tune,
     监控, 部署, 上线, 跑起来, 定时执行, 定时跑, 跑策略, 执行策略, 自动执行, 自动跑, 挂着跑, 定时任务, cron, run, deploy, monitor, 盯盘.
   This skill MUST be used for ANY request involving trading strategies, backtesting, parameter optimization, or strategy monitoring/execution.
   Also triggered when user replies with a number (1-6) following a skill prompt with numbered options.
   Do NOT use coding-agent for these tasks.
+  ========== CRITICAL RULE ==========
+  当用户要求创建/写/建/做策略时，你必须生成 PYTHON 脚本（使用 data_client + indicators 框架）。
+  ⛔ 绝对禁止生成 TradingView Pine Script（//@version=5, strategy(), ta.ema(), ta.crossover()）。
+  ⛔ 绝对禁止生成 MQL4/MQL5 或任何非 Python 的代码。
+  策略脚本必须包含: from data_client import DataClient + from indicators import Indicators as ind + def generate_signals()
+  详见下方 §1 的 Python 模板。
+  ==================================
 allowed-tools:
   - Bash
   - Read
@@ -22,13 +29,31 @@ allowed-tools:
 
 ```bash
 _BASE="{baseDir}"
-_SCRIPTS="$_BASE/scripts"
-_STRATS="$_BASE/strategies"
-mkdir -p "$_STRATS" "$_BASE/output"
+if [ ! -f "$_BASE/scripts/api_client.py" ]; then
+  echo "PATH_FIX_NEEDED"
+  _REAL=$(find /data -name "api_client.py" -path "*/dex-quant-skill/scripts/*" 2>/dev/null | head -1)
+  if [ -n "$_REAL" ]; then
+    _BASE=$(dirname $(dirname "$_REAL"))
+    echo "REAL_BASE=$_BASE"
+  fi
+fi
+mkdir -p "$_BASE/strategies" "$_BASE/output"
+echo "BASE=$_BASE"
 python3 -c "import httpx, loguru, matplotlib" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_DEPS"
 ```
 
-If `NEEDS_DEPS`: run `pip3 install httpx loguru matplotlib 2>/dev/null || pip install httpx loguru matplotlib 2>/dev/null || python3 -m pip install httpx loguru matplotlib 2>/dev/null`. **All three packages are required** — `matplotlib` generates the equity chart PNG. If all fail, tell user to install manually and **STOP**.
+**⚠️ 如果输出 `PATH_FIX_NEEDED`，必须用 `REAL_BASE` 的值替换后续所有 `{baseDir}`。**
+
+If `NEEDS_DEPS`（OpenClaw 环境需要 `--break-system-packages`）:
+
+```bash
+pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || python3 -m pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install --break-system-packages httpx loguru matplotlib)
+```
+
+All three required. If all fail → tell user to install manually and **STOP**.
 
 ## Workflow routing
 
@@ -37,7 +62,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | User says (任意一个即触发) | Workflow | Your FIRST response |
 |-----------|----------|---------------------|
 | "推荐策略" "有什么策略" "推荐" "有现成的吗" "不会写策略" "不知道怎么写" "有没有好的策略" "recommend" "suggestions" "哪个策略好" "试试什么" | **Recommend** | **直接推荐正收益策略（见下方 §0）** |
-| "建策略" "新策略" "做一个策略" "写策略" "做策略" "生成策略" "设计策略" "帮我写一个" "create" "new strategy" "想做一个xx策略" "帮我做" | Create | Extract params → generate script (§1) |
+| "创建策略" "创建一个策略" "创建" "建策略" "新策略" "做一个策略" "写策略" "做策略" "生成策略" "设计策略" "帮我写一个" "create" "new strategy" "想做一个xx策略" "帮我做" "弄个策略" | Create | Extract params → generate **Python** script (§1)，⛔ 禁止 Pine Script |
 | "回测" "测一下" "测试" "跑一下" "试试" "看看效果" "backtest" "test" "历史验证" "验证一下" "跑个回测" "看看能不能赚钱" | Backtest | Execute backtest code (§2) |
 | "优化" "调参" "优化参数" "优化策略" "优化下" "optimize" "tune" "调优" "提升" "改进参数" | **Optimize** | **⚠️ 见下方硬规则** |
 | "监控" "部署" "上线" "跑起来" "定时执行" "定时跑" "跑策略" "执行策略" "自动执行" "自动跑" "挂着跑" "定时任务" "cron" "run" "deploy" "盯盘" "实盘" "开始跑" "启动" | Monitor | Execute monitor setup (§4) |
@@ -162,7 +187,7 @@ Detect the user's intent and execute the matching workflow straight through.
 ### 具体规则
 
 1. **纯文本输出** — 执行代码后，将 `print()` 输出的格式化内容**原样作为 TG 消息发送**，不要包裹在代码块里，不要加额外解释
-2. **图片 + caption** — 当代码生成了图片（`_equity_chart_path` / `_optimization_chart_path`），**发送图片附件**，caption 用 `_caption` 字段的文本
+2. **图片 + caption** — 当代码生成了图片（`_equity_chart_path` / `_optimization_chart_path`），用 Bash 执行 `openclaw message send --path "<图片路径>" --caption "<_caption文本>"` 发送图片
 3. **禁止只展示不发送** — 不要把执行结果放在代码块或"执行结果"框里给用户看，用户在 TG 上看不到这些
 4. **禁止重述/改写** — `print()` 输出已经是格式化好的 tag 样式，直接发，不要用自己的话重写
 5. **图片优先原则** — 有图片时只发图片消息（caption 含摘要），不要额外再发文字消息；无图片时发一条文字消息
@@ -346,11 +371,12 @@ bt = client.run_server_backtest(
 2. 每 5 秒轮询进度，打印 `⏳ [Xs] stage (N%)`
 3. 完成后自动调用 `print_metrics()` 生成报告 + 权益曲线 PNG
 
-**⚠ 代码执行完毕后你 MUST 发 TG 消息：**
-1. 读取 `bt["_equity_chart_path"]` 的 PNG 文件
-2. 用 `bt["_caption"]` 的文字作为 caption 基础
-3. 根据评分等级在 caption 末尾追加一行建议（见下方 Display rules）
-4. **只发一条 TG 图片消息**（图片附件 + caption），不要额外发文字消息
+**⚠ 代码执行完毕后你 MUST 用 Bash 发送图片：**
+
+```bash
+openclaw message send --path "<bt._equity_chart_path的值>" --caption "<bt._caption的值 + 评分建议>"
+```
+**⛔ 禁止只打印图片路径当文字发。必须用 `openclaw message send --path` 发送图片文件。**
 
 **⛔ 禁止行为：**
 - ❌ 自己写分析段落（"结果"/"结论"/"我的判断"）
@@ -479,12 +505,12 @@ result = client.run_optimization(
 2. 每隔几秒轮询进度，在 25%/50%/90% 节点打印里程碑
 3. 完成后自动调用 `print_optimization()` 生成报告 + 优化图表 PNG
 
-**⚠ 代码执行完毕后你 MUST 发 TG 消息：**
+**⚠ 代码执行完毕后你 MUST 用 Bash 发送图片：**
 
-1. 读取 `result["_optimization_chart_path"]` 的 PNG 文件
-2. 用 `result["_caption"]` 的文字作为 caption
-3. **只发一条 TG 图片消息**（图片附件 + caption）
-4. stdout 中的进度信息不需要单独发送，caption 已包含最终结果
+```bash
+openclaw message send --path "<result._optimization_chart_path的值>" --caption "<result._caption的值>"
+```
+**⛔ 禁止只打印图片路径当文字发。必须用 `openclaw message send --path` 发送图片文件。**
 
 **⛔ 禁止行为：**
 - ❌ 自己写分析段落替代 caption
@@ -647,7 +673,7 @@ Only use `get_perp_klines` and `get_spot_klines`. Do not invent method names.
 | `sma` | `ind.sma(series, period)` |
 | `rsi` | `ind.rsi(series, period)` |
 | `macd` | `ind.macd(series, fast, slow, signal)` |
-| `bollinger` | `ind.bollinger(series, period, std)` |
+| `bollinger_bands` | `ind.bollinger_bands(series, period, num_std)` → (upper, middle, lower) |
 | `atr` | `ind.atr(high, low, close, period)` |
 | `kdj` | `ind.kdj(high, low, close, k, d, j)` |
 | `crossover` | `ind.crossover(a, b)` |
@@ -700,9 +726,10 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |
-| Use `![](path)` for chart image | TG 无法渲染本地路径 | 用 TG 图片发送功能作为附件发送 |
+| Use `![](path)` or 只打印路径 | TG 无法渲染本地路径 | `openclaw message send --path <path> --caption <text>` |
 | 把 stdout 放在代码块里展示 | 用户在 TG 看不到代码块结果 | 捕获 stdout → 作为 TG 文本消息发送 |
 | 自己写分析替代 print 输出 | print 输出已格式化好 | 原样发送 stdout，不改写 |
+| 生成 TradingView Pine Script (//@version=5) | 本 Skill 只支持 Python | 用 §1 的 Python 模板生成策略 |
 
 ---
 
