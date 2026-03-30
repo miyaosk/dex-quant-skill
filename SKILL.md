@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.23.0
+version: 3.24.0
 description: |
   加密货币量化交易 AI Skill。自然语言 → Python 策略脚本 → 服务器回测 → 参数优化 → 本地监控执行。
   Use when user asks to: 推荐策略, 有什么策略, 推荐, 有现成的吗, 不会写, recommend,
@@ -108,10 +108,10 @@ If `NEEDS_DEPS`: `pip3 install httpx loguru matplotlib`. All three required. If 
 
 ## TG 输出规则
 
-用户通过 Telegram 使用。代码执行后**必须把输出作为 TG 消息发送**：
-- **有图片** → 发图片附件 + `_caption` 作为 caption，不要额外发文字
-- **无图片** → 发一条文字消息（stdout 原样发，不改写）
-- **禁止** 把结果放代码块里、用自己的话重述、图片之外再发文字
+用户通过 Telegram 使用。代码执行后：
+- **有图片（回测/优化）** → 用 Bash 执行 `openclaw message send --path <图片路径> --caption "<说明>"` 发送
+- **无图片** → stdout 输出原样作为文字消息发送，不改写
+- **⛔ 禁止** 把图片路径当文字打印、把结果放代码块里、用自己的话重述
 
 ---
 
@@ -235,9 +235,15 @@ bt = client.run_server_backtest(
 )
 ```
 
-执行完毕 → 发 TG **图片消息**：图片=`bt["_equity_chart_path"]`，caption=`bt["_caption"]` + 评分建议。
+回测代码执行完毕后，**必须用 Bash 执行以下命令发送图片**：
 
-评分建议：A/B → 可部署 | C/D → 建议优化 | F → 建议重新设计 | 无交易 → 条件太严格
+```bash
+openclaw message send --path "<bt._equity_chart_path的值>" --caption "<bt._caption的值 + 评分建议>"
+```
+
+评分建议追加到 caption 末尾：A/B → 可部署 | C/D → 建议优化 | F → 建议重新设计 | 无交易 → 条件太严格
+
+**⛔ 禁止只打印图片路径当文字发。必须用 `openclaw message send --path` 发送图片文件。**
 
 ### 评分标准
 
@@ -281,7 +287,13 @@ result = client.run_optimization(
 )
 ```
 
-执行完毕 → 发 TG **图片消息**：图片=`result["_optimization_chart_path"]`，caption=`result["_caption"]`。
+优化代码执行完毕后，**必须用 Bash 执行以下命令发送图片**：
+
+```bash
+openclaw message send --path "<result._optimization_chart_path的值>" --caption "<result._caption的值>"
+```
+
+**⛔ 禁止只打印图片路径当文字发。必须用 `openclaw message send --path` 发送图片文件。**
 
 ---
 
@@ -351,8 +363,8 @@ DataClient: `dc.get_perp_klines("BTCUSDT", "4h", start, end)` / `dc.get_spot_kli
 | 调用 `start_monitor()` 等 | 本地运行 `signal_runtime.py` |
 | 推荐策略时讲策略类型教程 | 逐字发推荐模板 |
 | 优化时自己改代码/加指标 | 用 `run_optimization()` 调参 |
-| 图片+文字分开发 TG | 一条图片消息（caption 含摘要） |
-| `![](path)` 展示图片 | TG 图片附件发送 |
+| 把图片路径当文字打印 | `openclaw message send --path <路径> --caption "<说明>"` |
+| `![](path)` 展示图片 | `openclaw message send --path <路径>` |
 
 ## Pre-built Strategies（`{baseDir}/strategies/`）
 
