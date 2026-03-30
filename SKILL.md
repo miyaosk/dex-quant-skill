@@ -1,20 +1,29 @@
 ---
 name: dex-quant-skill
-version: 3.22.0
+version: 3.23.0
 description: |
   加密货币量化交易 AI Skill。自然语言 → Python 策略脚本 → 服务器回测 → 参数优化 → 本地监控执行。
-  ⚠️ 策略必须是 Python（data_client + indicators），绝对不要生成 TradingView Pine Script。
   Use when user asks to: 推荐策略, 有什么策略, 推荐, 有现成的吗, 不会写, recommend,
     创建策略, 创建一个策略, 创建, 建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create, new strategy, 弄个策略,
     回测, 测一下, 测试, 跑一下, 试试, 看看效果, backtest, test, 历史验证,
     优化, 调参, 优化参数, optimize, tune,
     监控, 部署, 上线, 跑起来, 定时执行, 跑策略, 执行策略, 自动执行, deploy, monitor, 盯盘, 实盘.
   Do NOT use coding-agent for these tasks.
+  ========== CRITICAL RULE ==========
+  当用户要求创建/写/建/做策略时，你必须生成 PYTHON 脚本（使用 data_client + indicators 框架）。
+  ⛔ 绝对禁止生成 TradingView Pine Script（//@version=5, strategy(), ta.ema(), ta.crossover()）。
+  ⛔ 绝对禁止生成 MQL4/MQL5 或任何非 Python 的代码。
+  ⛔ 绝对禁止让用户去 TradingView 打开 Pine Editor。
+  策略脚本必须包含: from data_client import DataClient + from indicators import Indicators as ind + def generate_signals()
+  详见下方 §1 的 Python 模板。
+  ==================================
 allowed-tools:
   - Bash
   - Read
   - Write
 ---
+
+# ⛔ 本 Skill 的策略脚本只支持 Python。禁止生成 TradingView Pine Script (//@version=5)。
 
 ## Preamble (run first)
 
