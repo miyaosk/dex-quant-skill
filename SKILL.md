@@ -27,13 +27,32 @@ allowed-tools:
 
 ```bash
 _BASE="{baseDir}"
-_SCRIPTS="$_BASE/scripts"
-_STRATS="$_BASE/strategies"
-mkdir -p "$_STRATS" "$_BASE/output"
+# 验证路径是否正确
+if [ ! -f "$_BASE/scripts/api_client.py" ]; then
+  echo "PATH_FIX_NEEDED"
+  _REAL=$(find /data -name "api_client.py" -path "*/dex-quant-skill/scripts/*" 2>/dev/null | head -1)
+  if [ -n "$_REAL" ]; then
+    _BASE=$(dirname $(dirname "$_REAL"))
+    echo "REAL_BASE=$_BASE"
+  fi
+fi
+mkdir -p "$_BASE/strategies" "$_BASE/output"
+echo "BASE=$_BASE"
 python3 -c "import httpx, loguru, matplotlib" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_DEPS"
 ```
 
-If `NEEDS_DEPS`: run `pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null || python3 -m pip install --break-system-packages httpx loguru matplotlib 2>/dev/null || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install --break-system-packages httpx loguru matplotlib)`. **All three packages are required** — `matplotlib` generates the equity chart PNG. If all fail, tell user to install manually and **STOP**.
+**⚠️ 如果输出 `PATH_FIX_NEEDED`，必须用 `REAL_BASE` 的值替换后续所有 `{baseDir}`。**
+
+If `NEEDS_DEPS`（OpenClaw 环境需要 `--break-system-packages`）:
+
+```bash
+pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || python3 -m pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install --break-system-packages httpx loguru matplotlib)
+```
+
+All three required. If all fail → tell user to install manually and **STOP**.
 
 ## Workflow routing
 
@@ -654,9 +673,9 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | `check_optimization(job_id)` | 仅查询进度（⛔ 不要单独使用，用 `run_optimization` 代替） |
 | `print_metrics(result)` | Display backtest report card |
 | `print_optimization(result)` | Display optimization report (auto-called) |
-| `start_monitor(script, name, symbol, timeframe, interval)` | Start server monitor (max 3 concurrent) |
-| `check_monitor(job_id)` | Get status + recent signals |
-| `list_monitors()` | List all my monitors |
+| `start_monitor(...)` | ⛔ 服务器接口未上线（404），不要调用 |
+| `check_monitor(job_id)` | ⛔ 不要调用 |
+| `list_monitors()` | ⛔ 不要调用 |
 | `stop_monitor(job_id)` | Stop server monitor |
 | `print_trades(result)` | Display trade records (only when user asks) |
 
