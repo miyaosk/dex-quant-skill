@@ -1,15 +1,16 @@
 ---
 name: dex-quant-skill
-version: 3.19.0
+version: 3.20.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
   Use when user asks to: 推荐策略, 有什么策略, 推荐, 有现成的吗, 不会写, recommend, suggestions,
-    建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create strategy, new strategy,
+    创建策略, 创建一个策略, 建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create strategy, new strategy, 创建, 弄个策略,
     回测, 测一下, 测试, 跑一下, 试试, 看看效果, backtest, test, 历史验证,
     优化, 调参, 优化参数, 优化策略, 优化下, optimize, tune,
     监控, 部署, 上线, 跑起来, 定时执行, 定时跑, 跑策略, 执行策略, 自动执行, 自动跑, 挂着跑, 定时任务, cron, run, deploy, monitor, 盯盘.
   This skill MUST be used for ANY request involving trading strategies, backtesting, parameter optimization, or strategy monitoring/execution.
+  ⚠️ 策略脚本必须是 Python（使用本 skill 的 data_client + indicators 框架），绝对不要生成 TradingView Pine Script 或其他语言。
   Also triggered when user replies with a number (1-6) following a skill prompt with numbered options.
   Do NOT use coding-agent for these tasks.
 allowed-tools:
@@ -37,7 +38,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | User says (任意一个即触发) | Workflow | Your FIRST response |
 |-----------|----------|---------------------|
 | "推荐策略" "有什么策略" "推荐" "有现成的吗" "不会写策略" "不知道怎么写" "有没有好的策略" "recommend" "suggestions" "哪个策略好" "试试什么" | **Recommend** | **直接推荐正收益策略（见下方 §0）** |
-| "建策略" "新策略" "做一个策略" "写策略" "做策略" "生成策略" "设计策略" "帮我写一个" "create" "new strategy" "想做一个xx策略" "帮我做" | Create | Extract params → generate script (§1) |
+| "创建策略" "创建一个策略" "创建" "建策略" "新策略" "做一个策略" "写策略" "做策略" "生成策略" "设计策略" "帮我写一个" "弄个策略" "create" "new strategy" "想做一个xx策略" "帮我做" | Create | Extract params → generate script (§1) |
 | "回测" "测一下" "测试" "跑一下" "试试" "看看效果" "backtest" "test" "历史验证" "验证一下" "跑个回测" "看看能不能赚钱" | Backtest | Execute backtest code (§2) |
 | "优化" "调参" "优化参数" "优化策略" "优化下" "optimize" "tune" "调优" "提升" "改进参数" | **Optimize** | **⚠️ 见下方硬规则** |
 | "监控" "部署" "上线" "跑起来" "定时执行" "定时跑" "跑策略" "执行策略" "自动执行" "自动跑" "挂着跑" "定时任务" "cron" "run" "deploy" "盯盘" "实盘" "开始跑" "启动" | Monitor | Execute monitor setup (§4) |
@@ -201,6 +202,8 @@ FILTERS:     Volume, volatility, time-of-day
 If entry/exit conditions are missing, **STOP** and ask. Everything else — use defaults silently.
 
 ### Step 2: Generate the script
+
+**⛔ 必须生成 Python 脚本（使用下方模板）。绝对不要生成 TradingView Pine Script、MQL、或任何其他语言/平台的策略。**
 
 Save to `{baseDir}/strategies/{name}_strategy.py`. The script is **never executed locally** — its source code is uploaded to the server as a string for backtesting.
 
@@ -696,7 +699,8 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | 拆分为两个代码块 (submit→poll) | 第二个代码块不会被执行 | 用 `run_server_backtest()` / `run_optimization()` 单代码块 |
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | 用户问"推荐策略"时讲策略类型教程（趋势跟随/均值回归/突破…） | 用户要能直接用的策略，不是上课 | **逐字发送推荐策略硬规则的固定模板**，推荐 2 个正收益策略文件 |
-| 调用 `start_monitor()` / `check_monitor()` / `list_monitors()` / `stop_monitor()` | 服务器监控接口未上线，返回 404 | 使用 Mode B 本地运行（`signal_runtime.py`） |
+| 调用 `start_monitor()` / `check_monitor()` / `list_monitors()` / `stop_monitor()` | 服务器监控接口未上线，返回 404 | 使用本地运行模式（`signal_runtime.py`） |
+| 生成 TradingView Pine Script / MQL / 其他语言的策略 | 本 skill 只支持 Python 策略脚本 | 用 §1 模板生成 Python 脚本（data_client + indicators） |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |
