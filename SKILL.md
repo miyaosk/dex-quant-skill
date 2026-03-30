@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.20.0
+version: 3.21.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -135,6 +135,34 @@ Detect the user's intent and execute the matching workflow straight through.
 - ❌ 自己决定要重新设计而不是优化
 
 **你没有权力判断策略值不值得优化。用户说优化，你就优化。**
+
+### ⚠️ "创建策略"硬规则 — 必须生成 Python，禁止 Pine Script
+
+当用户触发 Create 工作流（含"创建策略"/"创建一个策略"/"建策略"/"写策略"/"做策略"/"生成策略"/"create" 等），你**必须**：
+
+1. **先问用户想做什么交易逻辑**（如果用户没说清 entry/exit 条件）
+2. **生成 Python 脚本**，使用本 skill 的模板（`data_client` + `indicators` + `generate_signals()`）
+3. **保存到 `{baseDir}/strategies/` 目录**
+4. **然后问用户是否要回测**
+
+**⛔ 绝对禁止（违反 = 严重错误）：**
+- ❌ 生成 TradingView Pine Script（`//@version=5`、`strategy()`、`ta.ema()`、`ta.crossover()` 等）
+- ❌ 生成 MQL4/MQL5 或任何其他非 Python 代码
+- ❌ 让用户去 TradingView 打开 Pine Editor
+- ❌ 不走 §1 流程直接手写策略代码
+
+**❌ BAD — 以下是错误回复（绝对禁止）：**
+> `//@version=5`
+> `strategy("BTCUSDT 4H EMA20/60 Long", overlay=true)`
+> `emaFast = ta.ema(close, 20)`
+> "TradingView 打开 Pine Editor，粘贴代码……"
+
+**✅ GOOD — 正确做法：执行 §1，生成 Python 脚本：**
+> `import sys`
+> `sys.path.insert(0, '{baseDir}/scripts')`
+> `from data_client import DataClient`
+> `from indicators import Indicators as ind`
+> `def generate_signals(mode='backtest', ...): ...`
 
 **Automation posture:** prefer direct execution. Run the code and show results rather than listing steps. Use sensible defaults unless user specifies otherwise.
 
