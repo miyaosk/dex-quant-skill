@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.25.0
+version: 3.26.0
 description: |
   加密货币量化交易 AI Skill。自然语言 → Python 策略脚本 → 服务器回测 → 参数优化 → 本地监控执行。
   Use when user asks to: 推荐策略, 有什么策略, 推荐, 有现成的吗, 不会写, recommend,
@@ -33,15 +33,14 @@ mkdir -p "$_BASE/strategies" "$_BASE/output"
 python3 -c "import httpx, loguru, matplotlib" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_DEPS"
 ```
 
-If `NEEDS_DEPS`,按顺序尝试以下方式安装 `httpx loguru matplotlib`（哪个成功就停）：
+If `NEEDS_DEPS`,按顺序尝试安装 `httpx loguru matplotlib`（注意：OpenClaw 环境是 PEP 668 externally-managed，需要 `--break-system-packages`）：
 
 ```bash
-pip3 install httpx loguru matplotlib 2>/dev/null \
-  || pip install httpx loguru matplotlib 2>/dev/null \
-  || python3 -m pip install httpx loguru matplotlib 2>/dev/null \
-  || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install httpx loguru matplotlib) \
-  || (curl -sS https://bootstrap.pypa.io/get-pip.py | python3 && python3 -m pip install httpx loguru matplotlib) \
-  || (uv pip install httpx loguru matplotlib 2>/dev/null)
+pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || python3 -m pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+  || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install --break-system-packages httpx loguru matplotlib) \
+  || (curl -sS https://bootstrap.pypa.io/get-pip.py | python3 && python3 -m pip install --break-system-packages httpx loguru matplotlib)
 ```
 
 All three packages required. If all methods fail → tell user to install manually and **STOP**.
