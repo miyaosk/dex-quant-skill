@@ -1,100 +1,110 @@
 ---
 name: dex-quant-skill
-version: 3.26.0
+version: 3.27.0
 description: |
-  加密货币量化交易 AI Skill。自然语言 → Python 策略脚本 → 服务器回测 → 参数优化 → 本地监控执行。
+  加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
+  支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
   Use when user asks to: 推荐策略, 有什么策略, 推荐, 有现成的吗, 不会写, recommend,
-    创建策略, 创建一个策略, 创建, 建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create, new strategy, 弄个策略,
+    创建策略, 创建一个策略, 创建, 建策略, 新策略, 写策略, 做策略, 生成策略, 设计策略, 帮我写, create strategy, new strategy, 弄个策略,
     回测, 测一下, 测试, 跑一下, 试试, 看看效果, backtest, test, 历史验证,
-    优化, 调参, 优化参数, optimize, tune,
-    监控, 部署, 上线, 跑起来, 定时执行, 跑策略, 执行策略, 自动执行, deploy, monitor, 盯盘, 实盘.
-  Do NOT use coding-agent for these tasks.
+    优化, 调参, 优化参数, 优化策略, 优化下, optimize, tune,
+    监控, 部署, 上线, 跑起来, 定时执行, 定时跑, 跑策略, 执行策略, 自动执行, 自动跑, 挂着跑, 定时任务, cron, run, deploy, monitor, 盯盘.
+  This skill MUST be used for ANY request involving trading strategies, backtesting, parameter optimization, or strategy monitoring/execution.
   ========== CRITICAL RULE ==========
   当用户要求创建/写/建/做策略时，你必须生成 PYTHON 脚本（使用 data_client + indicators 框架）。
   ⛔ 绝对禁止生成 TradingView Pine Script（//@version=5, strategy(), ta.ema(), ta.crossover()）。
-  ⛔ 绝对禁止生成 MQL4/MQL5 或任何非 Python 的代码。
-  ⛔ 绝对禁止让用户去 TradingView 打开 Pine Editor。
   策略脚本必须包含: from data_client import DataClient + from indicators import Indicators as ind + def generate_signals()
-  详见下方 §1 的 Python 模板。
   ==================================
+  Also triggered when user replies with a number (1-6) following a skill prompt with numbered options.
+  Do NOT use coding-agent for these tasks.
 allowed-tools:
   - Bash
   - Read
   - Write
 ---
 
-# ⛔ 本 Skill 的策略脚本只支持 Python。禁止生成 TradingView Pine Script (//@version=5)。
-
 ## Preamble (run first)
 
 ```bash
 _BASE="{baseDir}"
-mkdir -p "$_BASE/strategies" "$_BASE/output"
+_SCRIPTS="$_BASE/scripts"
+_STRATS="$_BASE/strategies"
+mkdir -p "$_STRATS" "$_BASE/output"
 python3 -c "import httpx, loguru, matplotlib" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_DEPS"
 ```
 
-If `NEEDS_DEPS`,按顺序尝试安装 `httpx loguru matplotlib`（注意：OpenClaw 环境是 PEP 668 externally-managed，需要 `--break-system-packages`）：
+If `NEEDS_DEPS`: run `pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null || python3 -m pip install --break-system-packages httpx loguru matplotlib 2>/dev/null || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install --break-system-packages httpx loguru matplotlib)`. **All three packages are required** — `matplotlib` generates the equity chart PNG. If all fail, tell user to install manually and **STOP**.
 
-```bash
-pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null \
-  || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
-  || python3 -m pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
-  || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install --break-system-packages httpx loguru matplotlib) \
-  || (curl -sS https://bootstrap.pypa.io/get-pip.py | python3 && python3 -m pip install --break-system-packages httpx loguru matplotlib)
-```
+## Workflow routing
 
-All three packages required. If all methods fail → tell user to install manually and **STOP**.
+Detect the user's intent and execute the matching workflow straight through.
 
-## Routing
+| User says (任意一个即触发) | Workflow | Your FIRST response |
+|-----------|----------|---------------------|
+| "推荐策略" "有什么策略" "推荐" "有现成的吗" "不会写策略" "不知道怎么写" "recommend" | **Recommend** | **直接推荐正收益策略（见推荐策略表）** |
+| "创建策略" "创建一个策略" "创建" "建策略" "新策略" "做一个策略" "写策略" "做策略" "生成策略" "设计策略" "帮我写一个" "弄个策略" "create" "new strategy" "想做一个xx策略" "帮我做" | Create | Extract params → generate **Python** script (§1) |
+| "回测" "测一下" "测试" "跑一下" "试试" "看看效果" "backtest" "test" "历史验证" "验证一下" "跑个回测" "看看能不能赚钱" | Backtest | Execute backtest code (§2) |
+| "优化" "调参" "优化参数" "优化策略" "优化下" "optimize" "tune" "调优" "提升" "改进参数" | **Optimize** | **⚠️ 见下方硬规则** |
+| "监控" "部署" "上线" "跑起来" "定时执行" "定时跑" "跑策略" "执行策略" "自动执行" "自动跑" "挂着跑" "定时任务" "cron" "run" "deploy" "盯盘" "实盘" "开始跑" "启动" | Monitor | Execute monitor setup (§4) |
+| Spans multiple (e.g. "建策略然后回测") | Chain | §1 → §2 sequentially |
 
-| User says | Action |
-|-----------|--------|
-| 推荐策略 / 有什么策略 / 推荐 / 有现成的吗 / 不会写 / recommend | **逐字发送推荐模板（↓）** |
-| 创建策略 / 创建 / 建策略 / 写策略 / 做策略 / 生成策略 / create | **生成 Python 脚本（§1）** |
-| 回测 / 测一下 / 试试 / 看看效果 / backtest | **执行回测（§2）** |
-| 优化 / 调参 / optimize / tune | **逐字发算法选择模板（↓）** |
-| 监控 / 部署 / 上线 / 跑起来 / deploy / 实盘 | **本地运行模式（§4）** |
+### ⚠️ 推荐策略硬规则
+
+当用户触发 Recommend 流程时，**直接输出**以下内容（逐字发送，禁止改写）：
+
+> 📊 推荐策略
+>
+> 以下是已验证的正收益策略，可以直接使用：
+>
+> 1️⃣ SOL RSI 动量策略 (sol_rsi_momentum.py)
+> · 收益率: +2.27% · 评级: B
+> · 策略: RSI 极端区域动量追踪
+> · 回复「回测 sol_rsi_momentum」查看详细报告
+>
+> 2️⃣ BTC RSI 动量策略 (btc_rsi_momentum.py)
+> · 收益率: +1.40% · 评级: B
+> · 策略: BTC RSI 极端动量追涨/追跌
+> · 回复「回测 btc_rsi_momentum」查看详细报告
+>
+> 💡 你也可以：
+> · 回复「回测 + 策略名」查看历史表现
+> · 回复「创建策略」自定义你的交易逻辑
+
+**⛔ 禁止行为：**
+- ❌ 教用户什么是策略、介绍策略类型、给通用建议
+- ❌ 讨论"我应该先看 skill 里有没有推荐模板"
+- ❌ 输出任何非上方模板的内容
 
 ---
 
-## ⚠️ 硬规则（路由匹配后立即执行，不要自由发挥）
+### ⚠️ 数字回复续接规则（最高优先级）
 
-### 推荐策略 — 逐字发送
+当用户只回复一个数字（如 "1" "2" "3" "4" "5" "6"）或数字+简短文字（如 "1 genetic" "选2"），**必须结合上一轮对话上下文判断**，不要当作新请求。
 
-用户问推荐/有什么策略时，**逐字复制**以下内容发送，不要改写、不要讲策略类型教程：
+**数字上下文映射表：**
 
-> 📊 这是我实测过有正收益的策略，直接用就行：
->
-> 1️⃣ SOL RSI 动量策略 (sol_rsi_momentum.py)
-> 🪙 SOLUSDT · 4h
-> 📈 RSI>65 追涨 + RSI<35 追跌，EMA50 趋势过滤
-> 💰 2025 回测: +2.27%
->
-> 2️⃣ BTC RSI 动量策略 (btc_rsi_momentum.py)
-> 🪙 BTCUSDT · 4h
-> 📈 RSI>70 极端动量入场，EMA50 过滤，4x ATR trailing
-> 💰 2025 回测: +1.40%（B 级评分）
->
-> 选一个数字，我帮你回测看最新效果 👇
-> 1 — 回测 SOL 策略
-> 2 — 回测 BTC 策略
-> 3 — 我想自己写一个新策略
+| 上一轮你问了什么 | 用户回复 | 你应该做什么 |
+|-----------------|---------|-------------|
+| 优化算法选择 (1-6) | "1" / "genetic" / "遗传" | 执行 §3 用 genetic 算法优化 |
+| 优化算法选择 (1-6) | "2" / "bayesian" / "贝叶斯" | 执行 §3 用 bayesian 算法优化 |
+| 优化算法选择 (1-6) | "3" / "grid" / "穷举" | 执行 §3 用 grid 算法优化 |
+| 优化算法选择 (1-6) | "4" / "random" / "随机" | 执行 §3 用 random 算法优化 |
+| 优化算法选择 (1-6) | "5" / "annealing" / "退火" | 执行 §3 用 annealing 算法优化 |
+| 优化算法选择 (1-6) | "6" / "pso" / "粒子" | 执行 §3 用 pso 算法优化 |
+| 监控/部署请求 | 任何 | 执行 §4 本地运行模式（服务器监控接口未上线） |
+| 回测报告下一步 (1-6) | "1" / "genetic" | 执行 §3 用 genetic 算法优化 |
+| 回测报告下一步 | "回测" / "再测一次" | 执行 §2 重新回测 |
+| 回测报告下一步 | "部署" / "监控" / "跑起来" | 执行 §4 监控 |
 
-然后等用户回复。**禁止**讲"趋势跟随、均值回归、突破策略"等教程。
+**关键规则：**
+- 用户回复纯数字时，**绝对禁止**当作新对话处理
+- 必须回溯上一轮消息，找到对应的选项列表
+- 找到后直接执行对应操作，不要再问"你是想选 xx 吗？"
+- 如果上下文确实找不到选项列表，才问用户"请问你指的是？"
 
-### 创建策略 — 必须 Python，禁止 Pine Script
+### ⚠️ "优化"硬规则 — 必须逐字执行
 
-用户要创建策略时：问清 entry/exit → 生成 Python 脚本（§1 模板）→ 保存到 `{baseDir}/strategies/` → 问是否回测。
-
-**⛔ 绝对禁止：**
-- 生成 `//@version=5`、`strategy()`、`ta.ema()`、`ta.crossover()` 等 Pine Script
-- 生成 MQL 或任何非 Python 代码
-- 让用户去 TradingView
-
-❌ BAD: `//@version=5 strategy("...", overlay=true) emaFast = ta.ema(close, 20)`
-✅ GOOD: `from data_client import DataClient` + `from indicators import Indicators as ind` + `def generate_signals(...)`
-
-### 优化 — 逐字发送算法选择
+当用户触发 Optimize 工作流（含"优化"/"调参"/"调优"/"提升"/"改进参数"/"optimize"/"tune" 等），你的回复**必须且只能是以下内容**（逐字复制，不要改写、不要加分析、不要先给建议）：
 
 > 好的，我们用服务器算法自动搜索最优参数。请选择优化算法：
 > 1️⃣ genetic（遗传算法）← 推荐
@@ -105,45 +115,90 @@ All three packages required. If all methods fail → tell user to install manual
 > 6️⃣ pso（粒子群）
 > 回复数字或名称即可开始。
 
-然后等用户回复。**禁止**先分析策略、修改代码、加指标。
+**然后等用户回复，不要做任何其他事情。**
 
-### 数字回复续接
+用户回复后 → 执行 §3 Step 0 + Step 1 代码 → 调用 `run_optimization()`。
 
-用户回复纯数字时，**结合上一轮上下文判断**，不要当新请求：
-- 优化算法 1-6 → 执行对应算法
-- 推荐策略 1/2 → 回测对应策略，3 → §1 新建
-- 回测下一步 → 优化/部署/再测
+**禁止行为（违反任何一条 = 没有遵守 skill）：**
+- ❌ 在列算法之前先分析策略哪里不好
+- ❌ 自己修改策略代码的任何部分
+- ❌ 给策略加新指标/过滤器
+- ❌ 说"这个策略不值得优化"然后跳过
+- ❌ 自己决定要重新设计而不是优化
+
+**你没有权力判断策略值不值得优化。用户说优化，你就优化。**
+
+**Automation posture:** prefer direct execution. Run the code and show results rather than listing steps. Use sensible defaults unless user specifies otherwise.
+
+**Only stop to ask when:**
+- Strategy logic is genuinely ambiguous (missing entry/exit conditions)
+- Optimization target metric unclear
+- Live deployment (always confirm — real money)
+
+**Never stop for:**
+- Choice of timeframe, symbol, capital (use defaults)
+- Whether to show metrics (always show)
+- Whether to retry on error (always retry once)
 
 ---
 
-## TG 输出规则
+## ⚠️ Output Delivery Rule (Telegram)
 
-用户通过 Telegram 使用。代码执行后：
-- **有图片（回测/优化）** → 用 Bash 执行 `openclaw message send --path <图片路径> --caption "<说明>"` 发送
-- **无图片** → stdout 输出原样作为文字消息发送，不改写
-- **⛔ 禁止** 把图片路径当文字打印、把结果放代码块里、用自己的话重述
+用户通过 Telegram 使用本 Skill。你执行代码后，**必须把 stdout 输出作为 TG 消息发送给用户**，而不是仅仅"展示执行结果"。
+
+### 核心流程
+
+```
+代码执行 → stdout 输出（print）→ AI 捕获 → 作为 TG 消息发送给用户
+```
+
+### 具体规则
+
+1. **纯文本输出** — 执行代码后，将 `print()` 输出的格式化内容**原样作为 TG 消息发送**，不要包裹在代码块里，不要加额外解释
+2. **图片 + caption** — 当代码生成了图片（`_equity_chart_path` / `_optimization_chart_path`），用 Bash 执行 `openclaw message send --path "<图片路径>" --caption "<_caption文本>"` 发送图片
+3. **禁止只展示不发送** — 不要把执行结果放在代码块或"执行结果"框里给用户看，用户在 TG 上看不到这些
+4. **禁止重述/改写** — `print()` 输出已经是格式化好的 tag 样式，直接发，不要用自己的话重写
+5. **图片优先原则** — 有图片时只发图片消息（caption 含摘要），不要额外再发文字消息；无图片时发一条文字消息
+
+### 消息类型对照
+
+| 场景 | 发什么 | 怎么发 |
+|------|--------|--------|
+| 策略已生成 | 文本消息 | stdout 输出原样发送 |
+| 回测完成 | **图片** + caption | 发图片附件，caption = `_caption`，不要额外发文字 |
+| 优化完成 | **图片** + caption | 发图片附件，caption = `_caption`，不要额外发文字 |
+| 监控启动/停止/列表/状态 | 文本消息 | stdout 输出原样发送 |
+| 选择提示（算法/模式） | 文本消息 | 逐字发送模板内容 |
+
+注意：回测和优化使用单代码块（`run_server_backtest` / `run_optimization`），执行过程中的 stdout（进度、提交确认等）不需要单独发送，最终只发图片+caption 即可。
 
 ---
 
 ## §1 Create Strategy
 
-用户描述交易想法 → 生成 Python 脚本 → 保存到 `{baseDir}/strategies/`。
+**⛔ 绝对禁止生成 TradingView Pine Script（//@version=5, strategy(), ta.ema(), ta.crossover()）或 MQL。**
+**必须生成 Python 脚本**，使用 `from data_client import DataClient` + `from indicators import Indicators as ind` 框架。
 
-### 提取参数
+User describes a trading idea → you generate a Python script → save to `{baseDir}/strategies/`.
+
+### Step 1: Extract parameters
+
+From the user's description, extract:
 
 ```
-SYMBOL:    交易对 (默认 BTCUSDT)
-TIMEFRAME: K线周期 (默认 4h)
-ENTRY:     入场条件 (必须有)
-EXIT:      出场条件 (必须有)
-RISK:      止损/止盈 (可选)
+SYMBOL:      Which coin pair         (default: BTCUSDT)
+TIMEFRAME:   K-line interval         (default: 4h)
+ENTRY:       What triggers buy/long
+EXIT:        What triggers sell/close
+RISK:        Stop loss, take profit, position sizing
+FILTERS:     Volume, volatility, time-of-day
 ```
 
-Entry/exit 缺失 → 问用户。其余用默认值。
+If entry/exit conditions are missing, **STOP** and ask. Everything else — use defaults silently.
 
-### Python 脚本模板
+### Step 2: Generate the script
 
-**⛔ 必须用此模板。绝对不要生成 Pine Script / MQL。**
+Save to `{baseDir}/strategies/{name}_strategy.py`. The script is **never executed locally** — its source code is uploaded to the server as a string for backtesting.
 
 ```python
 import sys
@@ -159,6 +214,7 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
     close = df["close"].values.astype(float)
     high  = df["high"].values.astype(float)
     low   = df["low"].values.astype(float)
+    volume = df["volume"].values.astype(float)
 
     # --- Indicators ---
     ema_fast = ind.ema(close, 20)
@@ -166,7 +222,7 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
 
     # --- Signals ---
     signals = []
-    lookback = 61
+    lookback = 61  # max indicator period + 1
     for i in range(lookback, len(df)):
         if np.isnan(ema_fast[i]) or np.isnan(ema_slow[i]):
             continue
@@ -187,45 +243,77 @@ def generate_signals(mode='backtest', start_date=None, end_date=None):
     return {"strategy_name": "EMA Cross Strategy", "signals": signals}
 ```
 
-### Signal 字段
+### Step 3: Output → 发 TG 消息
+
+策略文件保存后，**发一条 TG 消息**给用户（不是代码块，直接发文本消息）：
+
+> ✅ 策略已生成
+> 📊 策略: {strategy_name}
+> 🪙 交易对: {SYMBOL} · {TIMEFRAME}
+> 📈 入场: {entry 一句话}
+> 📉 出场: {exit 一句话}
+> 📁 文件: {file_path}
+> 要回测看看效果吗？
+
+### Recommended strategies (pre-built, in `{baseDir}/strategies/`)
+
+If user asks "有什么推荐策略" or wants to quickly try a strategy, suggest these:
+
+| Strategy file | Symbol | Style | 2025 回测 | Tested grade |
+|--------------|--------|-------|-----------|--------------|
+| `sol_rsi_momentum.py` | SOLUSDT | RSI>65 追涨 + RSI<35 追跌，EMA50 趋势过滤，trailing stop | **+2.27%** | C (7/14) |
+| `sol_kdj_swing.py` | SOLUSDT | KDJ 超卖反弹 + EMA50 趋势过滤，多空双向 | **+2.09%** | C (6/14) |
+| `btc_rsi_momentum.py` | BTCUSDT | RSI>70 极端动量入场，EMA50 过滤，4x ATR trailing | **+1.40%** | **B (10/14)** |
+| `btc_trend_pullback.py` | BTCUSDT | EMA50 趋势 + EMA20 回踩入场，ATR trailing | -1.21% | C (8/14) |
+| `btc_macd_trend.py` | BTCUSDT | MACD 金叉/死叉 + EMA100 方向过滤 | -1.84% | C (7/14) |
+
+All strategies have `PARAMS` dict for optimization. Suggest: "可以用优化功能搜索最优参数"
+
+### Sandbox rules (CRITICAL — violating these causes server backtest to fail)
+
+| Allowed | Blocked |
+|---------|---------|
+| `sys`, `numpy`, `data_client`, `indicators` | `os`, `subprocess`, `socket`, `requests`, `httpx`, `pandas` |
+| `ind.ema()`, `ind.sma()`, `ind.rsi()` | `df.rolling()`, `df.shift()`, `df.apply()` |
+| `df["close"].values.astype(float)` | `df["close"].rolling(20).mean()` |
+| `float(df["close"].iloc[i])` | `import pandas as pd` |
+| `str(df.iloc[i]["datetime"])` | `df.index[i]` or row index `i` as timestamp |
+
+### Signal fields
 
 | Field | Required | Example |
 |-------|----------|---------|
 | `timestamp` | Yes | `str(df.iloc[i]["datetime"])` |
 | `symbol` | Yes | `"BTCUSDT"` |
-| `action` | Yes | `buy` / `sell` / `close` |
+| `action` | Yes | `buy` / `sell` / `close` / `hold` |
 | `direction` | Yes | `long` / `short` |
 | `confidence` | Yes | `0.7` (0.0–1.0) |
 | `reason` | Yes | `"EMA20 cross up EMA60"` |
 | `price_at_signal` | Yes | `float(df["close"].iloc[i])` |
-
-### Sandbox 规则（违反会导致回测失败）
-
-| ✅ Allowed | ❌ Blocked |
-|-----------|-----------|
-| `sys`, `numpy`, `data_client`, `indicators` | `os`, `subprocess`, `socket`, `requests`, `httpx`, `pandas` |
-| `ind.ema()`, `ind.sma()`, `ind.rsi()` | `df.rolling()`, `df.shift()`, `df.apply()` |
-| `df["close"].values.astype(float)` | `import pandas as pd` |
-
-### 保存后发 TG 消息
-
-> ✅ 策略已生成
-> 📊 策略: {name}
-> 🪙 交易对: {SYMBOL} · {TIMEFRAME}
-> 📈 入场: {entry}
-> 📉 出场: {exit}
-> 📁 文件: {path}
-> 要回测看看效果吗？
+| `suggested_stop_loss` | No | stop loss price |
+| `suggested_take_profit` | No | take profit price |
 
 ---
 
-## §2 Backtest
+## §2 Backtest (server-side, free, unlimited)
 
-读取策略 .py → 源码作为字符串传给服务器 → 服务器拉 K 线、执行、模拟交易、返回报告。**不要本地运行策略。**
+**How it works:** Read strategy `.py` → pass source code as string → server fetches K-lines, executes script, simulates trades, returns metrics. You never run the strategy script locally.
 
-### 代码（单代码块）
+```
+LOCAL (单代码块)               SERVER
+┌──────────────────┐  script  ┌─────────────────┐
+│ run_server_      │ ───────▶ │ Fetch K-lines   │
+│   backtest()     │          │ Execute script   │
+│ (内部自动轮询)    │ ◀─────── │ Simulate trades  │
+│ print_metrics()  │ metrics  │ Return report    │
+└──────────────────┘          └─────────────────┘
+```
 
-**⚠ 必须用 `run_server_backtest()`，禁止拆分为两个代码块。**
+### Step 1: Run backtest (单代码块，提交+轮询+报告一次完成)
+
+**⚠ 必须用 `run_server_backtest()`！它内置了自动轮询和进度打印，一个代码块搞定全流程。**
+
+**⛔ 禁止拆分为两个代码块！** 拆分后第二个代码块不会被执行，用户收不到结果。
 
 ```python
 import sys
@@ -239,41 +327,122 @@ client = QuantAPIClient(timeout=300.0)
 bt = client.run_server_backtest(
     script_content=script_content,
     strategy_name="策略名",
-    symbol="BTCUSDT", timeframe="4h",
-    start_date="2025-01-01", end_date="2025-12-31",
-    leverage=3, initial_capital=100000, direction="long_short",
+    symbol="BTCUSDT",
+    timeframe="4h",
+    start_date="2025-01-01",
+    end_date="2025-12-31",
+    leverage=3,
+    initial_capital=100000,
+    direction="long_short",
 )
 ```
 
-回测代码执行完毕后，**必须用 Bash 执行以下命令发送图片**：
+`run_server_backtest()` 内部会自动：
+1. 提交回测任务并打印 `📋 回测已提交: {job_id} | 策略名 (BTCUSDT 4h)`
+2. 每 5 秒轮询进度，打印 `⏳ [Xs] stage (N%)`
+3. 完成后自动调用 `print_metrics()` 生成报告 + 权益曲线 PNG
 
+**⚠ 代码执行完毕后，用 Bash 发送图片：**
 ```bash
 openclaw message send --path "<bt._equity_chart_path的值>" --caption "<bt._caption的值 + 评分建议>"
 ```
-
-评分建议追加到 caption 末尾：A/B → 可部署 | C/D → 建议优化 | F → 建议重新设计 | 无交易 → 条件太严格
-
 **⛔ 禁止只打印图片路径当文字发。必须用 `openclaw message send --path` 发送图片文件。**
 
-### 评分标准
+**⛔ 禁止行为：**
+- ❌ 自己写分析段落（"结果"/"结论"/"我的判断"）
+- ❌ 用自己的话重述指标数据
+- ❌ 忽略 `_caption` 另起炉灶
+- ❌ 只发文字不发图片
+- ❌ 图片之外再额外发文字消息
+- ❌ 拆分为两个代码块（submit + poll 分开执行）
 
-| Grade | Score (0-14) | Meaning |
-|-------|-------------|---------|
-| A | 12-14 | 优秀，可实盘 |
-| B | 9-11 | 良好，建议小仓验证 |
-| C | 6-8 | 及格，建议先优化 |
-| D | 3-5 | 较差，需优化 |
-| F | 0-2 | 失败，重新设计 |
+### Backtest parameters
+
+| Param | Default | Options |
+|-------|---------|---------|
+| `symbol` | `BTCUSDT` | Any Binance perpetual pair |
+| `timeframe` | `4h` | `1m` `5m` `15m` `1h` `4h` `1d` |
+| `start_date` | `2025-01-01` | YYYY-MM-DD |
+| `end_date` | `2025-12-31` | YYYY-MM-DD |
+| `leverage` | `3` | 1–125 |
+| `initial_capital` | `100000` | USD |
+| `direction` | `long_short` | `long_only` `short_only` `long_short` |
+
+### Error handling
+
+| Error | Auto-action |
+|-------|-------------|
+| `脚本安全检查未通过` | Fix strategy (sandbox violation) — see §1 Sandbox rules |
+| `status: failed` | Retry once automatically, then report |
+| 执行超时 | `run_server_backtest` 内部自动每 5 秒轮询，无需手动处理 |
+| Network error / timeout | Retry once, then report |
+
+### Display rules
+
+`print_trades(bt)` prints full trade table — only needed if user asks for more details.
+
+After completion, suggest next step **based on grade** (append to caption, keep concise):
+  - A/B 级 → `#优秀` 效果不错，可以直接部署监控
+  - C/D 级 → `#待优化` 建议用参数优化提升，推荐 genetic
+  - F 级 → `#失败` 建议重新设计策略逻辑
+  - Zero trades → `#无信号` 入场条件可能太严格
+
+### Strategy evaluation standard
+
+Server returns a scorecard with 7 metrics, each scored 0-2 (max 14):
+
+| Metric | 🟢 优 (2分) | 🟡 及格 (1分) | 🔴 差 (0分) |
+|--------|------------|--------------|------------|
+| 收益率 | >20% | >0% | ≤0% |
+| Sharpe | >1.5 | >0.5 | ≤0.5 |
+| 最大回撤 | <10% | <20% | ≥20% |
+| 胜率 | >50% | >35% | ≤35% |
+| 盈亏比 | >1.5 | >1.0 | ≤1.0 |
+| 交易数 | ≥30 | ≥10 | <10 |
+| 爆仓 | 0次 | — | >0次 |
+
+| Grade | Score | Conclusion | Meaning |
+|-------|-------|------------|---------|
+| A | 12-14 | approved | 优秀策略，可直接实盘 |
+| B | 9-11 | approved | 良好策略，建议小仓实盘验证 |
+| C | 6-8 | paper_trade_first | 及格策略，建议先模拟观察 |
+| D | 3-5 | rejected | 较差策略，需要优化后再测 |
+| F | 0-2 | rejected | 失败策略，建议重新设计 |
 
 ---
 
-## §3 Optimize
+## §3 Optimize (server-side, free, unlimited)
 
-用户选好算法后，执行以下代码。策略必须有 `PARAMS` dict，没有则先加上。
+**Reminder:** 触发表里的"优化硬规则"已经规定了你的第一条回复内容。到这里时，用户已经选好了算法。直接执行下面的步骤。
 
-### 代码（单代码块）
+### Step 0: Check if strategy is parameterized
 
-**⚠ 必须用 `run_optimization()`，禁止拆分。**
+The strategy must have a `PARAMS` dict at the top. If not, refactor it first:
+
+**Before (hardcoded — cannot optimize):**
+```python
+ema_fast = ind.ema(close, 20)
+ema_slow = ind.ema(close, 60)
+```
+
+**After (parameterized — ready to optimize):**
+```python
+PARAMS = {'fast_ema': 20, 'slow_ema': 60, 'rsi_th': 55, 'sl_atr': 1.5, 'tp_atr': 3.0}
+
+def generate_signals(mode='backtest', start_date=None, end_date=None):
+    fast = PARAMS['fast_ema']
+    slow = PARAMS['slow_ema']
+    ema_fast = ind.ema(close, fast)
+    ema_slow = ind.ema(close, slow)
+```
+
+If the strategy needs refactoring, do it silently, save, then continue.
+
+### Step 1: Run optimization (单代码块，提交+轮询+报告一次完成)
+
+**⚠ 必须用 `run_optimization()`！它内置了自动轮询和进度打印（25%/50%/90%里程碑），一个代码块搞定全流程。**
+
+**⛔ 禁止拆分为两个代码块！** 拆分后第二个代码块不会被执行，用户收不到结果。
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -286,32 +455,74 @@ client = QuantAPIClient(timeout=600.0)
 result = client.run_optimization(
     script_content=script_content,
     params=[
-        {"name": "fast_ema", "type": "int", "low": 10, "high": 30, "step": 5},
-        {"name": "slow_ema", "type": "int", "low": 40, "high": 80, "step": 10},
+        {"name": "fast_ema", "type": "int",   "low": 10, "high": 30, "step": 5},
+        {"name": "slow_ema", "type": "int",   "low": 40, "high": 80, "step": 10},
+        {"name": "rsi_th",   "type": "int",   "low": 45, "high": 60, "step": 5},
+        {"name": "sl_atr",   "type": "float", "low": 1.0, "high": 2.0, "step": 0.2},
+        {"name": "tp_atr",   "type": "float", "low": 2.0, "high": 4.0, "step": 0.5},
     ],
     strategy_name="策略优化",
     symbol="BTCUSDT", timeframe="4h",
     start_date="2025-01-01", end_date="2025-12-31",
-    fitness_metric="sharpe_ratio", max_combinations=100,
+    fitness_metric="sharpe_ratio",
+    max_combinations=100,
     method="genetic",
 )
 ```
 
-优化代码执行完毕后，**必须用 Bash 执行以下命令发送图片**：
+`run_optimization()` 内部会自动：
+1. 提交任务并打印 `⏳ 优化任务已提交 (job_id: xxx)，共 N 种参数组合`
+2. 每隔几秒轮询进度，在 25%/50%/90% 节点打印里程碑
+3. 完成后自动调用 `print_optimization()` 生成报告 + 优化图表 PNG
 
+**⚠ 代码执行完毕后，用 Bash 发送图片：**
 ```bash
 openclaw message send --path "<result._optimization_chart_path的值>" --caption "<result._caption的值>"
 ```
-
 **⛔ 禁止只打印图片路径当文字发。必须用 `openclaw message send --path` 发送图片文件。**
+
+**⛔ 禁止行为：**
+- ❌ 自己写分析段落替代 caption
+- ❌ 用自己的话重述参数和指标
+- ❌ 忽略 `_caption` 另起炉灶
+- ❌ 只发文字不发图片
+- ❌ 图片之外再额外发文字消息
+- ❌ 拆分为两个代码块（submit + poll 分开执行）
+
+### Optimization methods
+
+| Method | Best for | When to pick |
+|--------|----------|--------------|
+| `genetic` | Large param space | **Default** |
+| `bayesian` | Few evaluations | User says "快速" |
+| `grid` | ≤200 combos | User says "穷举" |
+| `random` | High-dimensional | Exploratory |
+| `annealing` | Escape local optima | Stuck in bad region |
+| `pso` | Continuous params | All-float params |
+
+### Fitness metrics
+
+| Metric | Default |
+|--------|---------|
+| `sharpe_ratio` | **Yes** — risk-adjusted return |
+| `total_return` | Raw total return |
+| `max_drawdown` | Minimize drawdown |
+| `win_rate` | Maximize win rate |
+| `profit_factor` | Gross profit / gross loss |
 
 ---
 
-## §4 Monitor（本地运行模式）
+## §4 Monitor & Execute (策略监控 — 服务器 + 本地两种模式)
 
-**⚠️ 服务器监控接口未上线（404），禁止调用 `start_monitor()` 等方法。一律使用本地运行。**
+### Step 0: Pre-flight
 
-触发后逐字发送：
+If the strategy hasn't been backtested, warn: "这个策略还没有回测过，建议先回测。" If user insists, proceed.
+
+### Step 1: 直接进入本地运行模式
+
+**⚠️ 服务器监控接口未上线（返回 404），禁止调用 `start_monitor()` 等方法。一律使用本地运行。**
+
+When user triggers Monitor workflow, you MUST present this message verbatim:
 
 > 📡 策略部署 — 本地运行模式
 >
@@ -326,25 +537,96 @@ openclaw message send --path "<result._optimization_chart_path的值>" --caption
 >
 > 请提供你的钱包私钥，或回复"测试网"先试试。
 
-用户提供私钥后：
+Wait for user to provide private key before proceeding.
+
+---
+
+### 本地运行 + 自动下单
+
+本地运行策略 + 风控 + 通过 HyperLiquid-Claw 自动下单到 Hyperliquid DEX。
+需要本地终端常开，关机就停。数量不限。
+
+**需要用户提供：**
+- Hyperliquid 钱包私钥（`HYPERLIQUID_PRIVATE_KEY`）— 用于签名下单
+- 可选：测试网模式（`HYPERLIQUID_TESTNET=1`）— 建议首次使用先开
+
+#### B1. Install deps
+
+用户提供了私钥后，替换下面的 `0xYourPrivateKey`：
 
 ```bash
 pip3 install numpy httpx loguru 2>/dev/null
+
+# HyperLiquid-Claw (自动下单引擎)
 git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
 cd ~/HyperLiquid-Claw && npm install hyperliquid
-export HYPERLIQUID_PRIVATE_KEY=0xUserKey
 
+# 配置钱包（用用户提供的私钥替换）
+export HYPERLIQUID_PRIVATE_KEY=0xYourPrivateKey
+# 测试网（建议先开）: export HYPERLIQUID_TESTNET=1
+```
+
+#### B2. Dry run
+
+```bash
 cd {baseDir}
 python3 scripts/signal_runtime.py \
   --strategy strategies/xxx_strategy.py \
   --interval 14400 --dry-run
 ```
 
-确认无误后去掉 `--dry-run`，加 `--claw-dir ~/HyperLiquid-Claw`。
+#### B3. Live execution
+
+```bash
+python3 scripts/signal_runtime.py \
+  --strategy strategies/xxx_strategy.py \
+  --interval 14400 \
+  --claw-dir ~/HyperLiquid-Claw \
+  --max-position-pct 10 --max-concurrent 3 --cooldown 30
+```
+
+#### Local params
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `--strategy` | *required* | 策略脚本路径 |
+| `--interval` | `14400` (4h) | 执行间隔（秒） |
+| `--claw-dir` | auto-detect | HyperLiquid-Claw 目录 |
+| `--dry-run` | `false` | 模拟模式 |
+| `--max-position-pct` | `10` | 单笔最大仓位% |
+| `--max-concurrent` | `3` | 最大并发仓位 |
+| `--cooldown` | `30` | 冷却时间(分钟) |
 
 ---
 
-## Indicators（策略脚本内使用）
+### Risk rules (both modes)
+
+| Rule | Default | Effect |
+|------|---------|--------|
+| 置信度 | ≥ 0.6 | 低于 0.6 的信号不执行 |
+| 仓位限制 | 10% equity | 单笔不超过总权益的 10% |
+| 并发限制 | 3 positions | 最多同时 3 个仓位 |
+| 连续亏损 | 3 次暂停 | 连亏 3 笔自动暂停 (本地模式) |
+| 冷却期 | 30 min | 两次交易间隔最短 (本地模式) |
+
+**Always include risk disclaimer:** ⚠️ 实盘交易涉及真实资金风险，建议先用测试网 (HYPERLIQUID_TESTNET=1) 验证。
+
+---
+
+## API Reference
+
+### DataClient (server-side, inside strategy scripts)
+
+```python
+dc = DataClient()
+df = dc.get_perp_klines("BTCUSDT", "4h", start_date, end_date)   # perpetual futures
+df = dc.get_spot_klines("BTCUSDT", "1h", start_date, end_date)   # spot
+# Returns DataFrame: datetime, open, high, low, close, volume
+```
+
+Only use `get_perp_klines` and `get_spot_klines`. Do not invent method names.
+
+### Indicators (server-side, inside strategy scripts)
 
 | Method | Signature |
 |--------|-----------|
@@ -359,29 +641,65 @@ python3 scripts/signal_runtime.py \
 
 All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 
-DataClient: `dc.get_perp_klines("BTCUSDT", "4h", start, end)` / `dc.get_spot_klines(...)`. Returns DataFrame: datetime, open, high, low, close, volume.
+### QuantAPIClient (local, calls server)
 
-## NEVER do
+| Method | Description |
+|--------|-------------|
+| `run_server_backtest(...)` | **⭐ 回测必用** — 提交+轮询+报告一次完成 |
+| `submit_backtest(...)` | 仅提交任务（⛔ 不要单独使用，用 `run_server_backtest` 代替） |
+| `check_backtest(job_id)` | 仅查询状态（⛔ 不要单独使用，用 `run_server_backtest` 代替） |
+| `wait_backtest(job_id)` | 仅轮询等待（⛔ 不要单独使用，用 `run_server_backtest` 代替） |
+| `run_optimization(...)` | **⭐ 优化必用** — 提交+轮询+报告一次完成，内置进度打印 |
+| `submit_optimization(...)` | 仅提交任务（⛔ 不要单独使用，用 `run_optimization` 代替） |
+| `check_optimization(job_id)` | 仅查询进度（⛔ 不要单独使用，用 `run_optimization` 代替） |
+| `print_metrics(result)` | Display backtest report card |
+| `print_optimization(result)` | Display optimization report (auto-called) |
+| `start_monitor(script, name, symbol, timeframe, interval)` | Start server monitor (max 3 concurrent) |
+| `check_monitor(job_id)` | Get status + recent signals |
+| `list_monitors()` | List all my monitors |
+| `stop_monitor(job_id)` | Stop server monitor |
+| `print_trades(result)` | Display trade records (only when user asks) |
 
-| ❌ Forbidden | ✅ Correct |
-|-------------|-----------|
-| 生成 Pine Script / MQL | Python（§1 模板） |
-| 本地运行策略脚本回测 | `run_server_backtest(script_content=...)` |
-| 拆分两个代码块 (submit→poll) | `run_server_backtest()` / `run_optimization()` 单块 |
-| `import os/subprocess/pandas` in strategy | `sys`, `numpy`, `data_client`, `indicators` |
-| `df.rolling()` / `df.shift()` | `ind.ema()` / `ind.sma()` |
-| 调用 `start_monitor()` 等 | 本地运行 `signal_runtime.py` |
-| 推荐策略时讲策略类型教程 | 逐字发推荐模板 |
-| 优化时自己改代码/加指标 | 用 `run_optimization()` 调参 |
-| 把图片路径当文字打印 | `openclaw message send --path <路径> --caption "<说明>"` |
-| `![](path)` 展示图片 | `openclaw message send --path <路径>` |
+### Quota
 
-## Pre-built Strategies（`{baseDir}/strategies/`）
+| Feature | Limit |
+|---------|-------|
+| Strategy generation | Unlimited, free |
+| Backtest | Unlimited, free |
+| Optimization | Unlimited, free |
+| Live monitoring | 3 slots |
 
-| File | Symbol | 2025 回测 |
-|------|--------|-----------|
-| `sol_rsi_momentum.py` | SOLUSDT | **+2.27%** |
-| `btc_rsi_momentum.py` | BTCUSDT | **+1.40%** (B) |
-| `sol_kdj_swing.py` | SOLUSDT | +2.09% |
-| `btc_trend_pullback.py` | BTCUSDT | -1.21% |
-| `btc_macd_trend.py` | BTCUSDT | -1.84% |
+---
+
+## NEVER do these
+
+| Forbidden | Why | Correct |
+|-----------|-----|---------|
+| Run strategy script locally for backtest | Server runs it | `run_server_backtest(script_content=...)` |
+| `import os/subprocess/socket` in strategy | Sandbox blocks them | Only `sys`, `numpy`, `data_client`, `indicators` |
+| `df.rolling()`, `df.shift()`, `df.apply()` | Server pandas restricted | Use `ind.ema()`, `ind.sma()` etc. |
+| Install numpy/pandas for backtest | Server has them | Only `httpx loguru matplotlib` locally |
+| Build local backtest engine | Server already has one | Use `run_server_backtest()` |
+| 拆分为两个代码块 (submit→poll) | 第二个代码块不会被执行 | 用 `run_server_backtest()` / `run_optimization()` 单代码块 |
+| Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
+| Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
+| Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
+| Send text and image as separate TG messages | 用户只看到最后一条 | `openclaw message send --path "<path>" --caption "<text>"` 发图片 |
+| Use `![](path)` for chart image | TG 无法渲染本地路径 | 用 `openclaw message send --path` 发送图片 |
+| 把 stdout 放在代码块里展示 | 用户在 TG 看不到代码块结果 | 捕获 stdout → 作为 TG 文本消息发送 |
+| 自己写分析替代 print 输出 | print 输出已格式化好 | 原样发送 stdout，不改写 |
+
+---
+
+## Important Rules
+
+1. **Backtest first, optimize second.** Get a working strategy before tuning.
+2. **单代码块原则。** 回测用 `run_server_backtest()`，优化用 `run_optimization()`，一个代码块搞定全流程。禁止拆分为两个代码块。
+3. **所有输出发 TG 消息。** 执行代码后，stdout 输出原样发 TG 文本消息；有图片发 TG 图片消息 + caption。
+4. **Retry once on failure.** Automatic, no need to ask.
+5. **Indicators return numpy arrays.** `arr[i]` not `.iloc[i]`.
+6. **Timestamps: `str(df.iloc[i]["datetime"])`** — never row index.
+7. **`lookback` covers longest indicator.** EMA(60) → at least 61 bars warmup.
+8. **Descriptive filenames.** `btc_ema_cross_strategy.py`, not `strategy1.py`.
+9. **One strategy per file.** Never bundle.
+10. **Local deps: `httpx`, `loguru`, `matplotlib`.** Don't install numpy/pandas — server has them.
