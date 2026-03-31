@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.33.0
+version: 3.34.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -82,7 +82,8 @@ Detect the user's intent and execute the matching workflow straight through.
 | 优化算法选择 (1-6) | "4" / "random" / "随机" | 执行 §3 用 random 算法优化 |
 | 优化算法选择 (1-6) | "5" / "annealing" / "退火" | 执行 §3 用 annealing 算法优化 |
 | 优化算法选择 (1-6) | "6" / "pso" / "粒子" | 执行 §3 用 pso 算法优化 |
-| 监控/部署请求 | 任何 | 执行 §4 服务器监控模式 |
+| 监控/部署请求 | 任何 | 执行 §4 选择模式（信号监控 or 监控+自动下单） |
+| 私钥/密钥/钱包设置 | 任何 | 执行 §4 Step 2b 安全链接流程 |
 | 回测报告下一步 (1-6) | "1" / "genetic" | 执行 §3 用 genetic 算法优化 |
 | 回测报告下一步 | "回测" / "再测一次" | 执行 §2 重新回测 |
 | 回测报告下一步 | "部署" / "监控" / "跑起来" | 执行 §4 监控 |
@@ -543,28 +544,31 @@ openclaw message send --path "<result._optimization_chart_path的值>" --caption
 
 ---
 
-## §4 Monitor & Execute (策略监控 — 服务器 + 本地两种模式)
+## §4 Monitor & Execute (策略监控 — 服务器模式)
 
 ### Step 0: Pre-flight
 
 If the strategy hasn't been backtested, warn: "这个策略还没有回测过，建议先回测。" If user insists, proceed.
 
-### Step 1: 直接启动服务器监控
-
-Bot 环境没有本地终端，所有监控一律使用服务器模式。不要给用户选择本地模式。
+### Step 1: 选择模式
 
 When user triggers Monitor workflow, you MUST present this message verbatim:
 
 > 📡 **策略监控部署**
 >
-> 服务器将 7×24 定时执行你的策略，产生买卖信号后推送给你。
-> · 免费同时监控 3 个策略
-> · 信号自动存入数据库，支持历史回查
-> · 无需本地开机
+> 服务器 7×24 定时执行你的策略，产生买卖信号。
 >
-> 确认要部署吗？回复「确认」开始。
+> 1️⃣ **仅监控信号** — 收到信号后你自己手动操作
+> 2️⃣ **监控 + 自动下单** — 需要配置 Hyperliquid 钱包密钥（通过安全链接，不在聊天里输入）
+>
+> 两种模式都：免费 3 个策略、7×24、无需本地开机。
+> 回复 1 或 2 选择。
 
-Wait for user to confirm, then execute:
+Wait for user to choose before proceeding.
+
+### Step 2a: 仅监控信号（用户选了 1）
+
+直接启动监控，不需要私钥：
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -584,10 +588,59 @@ result = client.start_monitor(
 print(f"✅ 监控已启动 | Job ID: {result['job_id']} | 配额 {result['quota_used']}/{result['quota_max']}")
 ```
 
-**管理命令：**
+### Step 2b: 监控 + 自动下单（用户选了 2）
+
+**先检查密钥是否已配置 → 没有则生成安全链接 → 用户在浏览器提交 → 再启动监控。**
+
+```python
+import sys; sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient(timeout=60.0)
+
+# 第一步：检查密钥状态
+vault = client.vault_status()
+if not vault.get("has_key"):
+    # 生成安全链接，用户在浏览器中提交私钥
+    link = client.vault_setup_link()
+    print(f"\n请在浏览器中打开以下链接，粘贴你的钱包私钥：")
+    print(f"{link['url']}")
+    print(f"\n提交完成后，回来告诉我「OK」。")
+```
+
+When user confirms key is set, verify and start monitor:
+
+```python
+import sys; sys.path.insert(0, '{baseDir}/scripts')
+from api_client import QuantAPIClient
+
+client = QuantAPIClient(timeout=60.0)
+vault = client.vault_status()
+if not vault.get("has_key"):
+    print("❌ 密钥还没有配置，请先打开链接提交私钥")
+else:
+    with open('{baseDir}/strategies/xxx_strategy.py', 'r') as f:
+        script_content = f.read()
+    result = client.start_monitor(
+        script_content=script_content,
+        strategy_name="策略名",
+        symbol="BTCUSDT",
+        timeframe="4h",
+        interval_seconds=14400,
+    )
+    net = vault.get("network", "mainnet")
+    print(f"✅ 监控已启动 | Job ID: {result['job_id']} | 网络: {net}")
+    print(f"   产生信号后将自动下单到 Hyperliquid {'测试网' if net == 'testnet' else '主网'}")
+```
+
+### 管理命令
+
 - 查看状态: `client.check_monitor(job_id)`
 - 列出全部: `client.list_monitors()`
 - 停止监控: `client.stop_monitor(job_id)`
+- 查看密钥: `client.vault_status()`
+- 删除密钥: `client.vault_delete()`
+- 重新设置: `client.vault_setup_link()`
 
 ---
 
@@ -601,8 +654,8 @@ print(f"✅ 监控已启动 | Job ID: {result['job_id']} | 配额 {result['quota
 > 请不要在聊天中发送私钥！私钥会留在聊天记录中，非常不安全。
 > 如果这个私钥控制了真实资金，建议立即转移资产并更换钱包。
 >
-> 目前策略监控模式只产生买卖信号推送给你，不需要私钥。
-> 你可以收到信号后自己手动在交易所操作。
+> 正确做法：我帮你生成一个安全链接，你在浏览器里提交私钥，不经过聊天。
+> 回复「设置密钥」，我来帮你操作。
 
 ---
 
@@ -665,6 +718,9 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | `check_monitor(job_id)` | 查看监控状态 + 最近信号 |
 | `list_monitors()` | 列出我的所有监控任务 |
 | `stop_monitor(job_id)` | 停止监控任务 |
+| `vault_setup_link()` | 生成一次性安全链接，用户在浏览器中提交私钥 |
+| `vault_status()` | 查询密钥是否已配置 |
+| `vault_delete()` | 删除已存储的密钥 |
 | `print_trades(result)` | Display trade records (only when user asks) |
 
 ### Quota
@@ -691,8 +747,7 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | 用户问"推荐策略"时讲策略类型教程（趋势跟随/均值回归/突破…） | 用户要能直接用的策略，不是上课 | **逐字发送推荐策略硬规则的固定模板**，推荐 2 个正收益策略文件 |
 | 只推荐本地运行、不提供服务器监控选项 | 用户可能更想 7×24 服务器监控 | 按 §4 Step 1 先让用户选择模式 |
-| 在聊天中索要或接收用户的钱包私钥 | 私钥会留在聊天记录中，极不安全 | 服务器监控不需要私钥，只推送信号；如用户发了私钥，立即警告 |
-| 推荐本地运行模式 | Bot 环境没有本地终端，用户无法操作 | 一律使用服务器监控模式 |
+| 在聊天中索要或接收用户的钱包私钥 | 私钥会留在聊天记录中，极不安全 | 用 `vault_setup_link()` 生成安全链接，用户在浏览器中提交 |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |

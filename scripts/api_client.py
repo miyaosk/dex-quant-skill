@@ -1445,6 +1445,59 @@ class QuantAPIClient:
 
         return data
 
+    # ═══════════════ 密钥保险箱 (Vault) ═══════════════
+
+    def vault_setup_link(self) -> dict:
+        """
+        生成一次性密钥设置链接。
+
+        用户在浏览器中打开该链接，粘贴私钥并提交。
+        私钥通过 HTTPS 传输，AES-256-GCM 加密存储在服务器。
+        不经过聊天记录。
+
+        返回: {"url": "https://...", "token": "vt_xxx", "expires_in_minutes": 30}
+        """
+        resp = self._client.post(f"{self.base_url}/vault/setup-link", headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+
+        print(f"\n{'━' * 50}")
+        print(f"  🔐 密钥设置链接已生成")
+        print(f"  📎 链接: {data['url']}")
+        print(f"  ⏰ 有效期: {data['expires_in_minutes']} 分钟")
+        print(f"{'━' * 50}")
+        print(f"\n  请在浏览器中打开以上链接，粘贴你的钱包私钥。")
+        print(f"  私钥不会出现在聊天记录中。\n")
+
+        return data
+
+    def vault_status(self) -> dict:
+        """
+        查询密钥存储状态。
+
+        返回: {"has_key": true/false, "network": "mainnet/testnet", ...}
+        """
+        resp = self._client.get(f"{self.base_url}/vault/status", headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+
+        if data.get("has_key"):
+            net = data.get("network", "mainnet")
+            net_icon = "🌐" if net == "mainnet" else "🧪"
+            print(f"\n  ✅ 密钥已配置 | {net_icon} {net}")
+        else:
+            print(f"\n  ❌ 尚未配置密钥")
+
+        return data
+
+    def vault_delete(self) -> dict:
+        """删除已存储的密钥。"""
+        resp = self._client.delete(f"{self.base_url}/vault/key", headers=self._headers())
+        resp.raise_for_status()
+        data = resp.json()
+        print(f"\n  🗑️ 密钥已删除")
+        return data
+
     # ═══════════════ 生命周期 ═══════════════
 
     def close(self):
