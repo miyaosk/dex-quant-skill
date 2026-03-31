@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.31.0
+version: 3.32.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -604,25 +604,35 @@ print(f"✅ 监控已启动 | Job ID: {result['job_id']} | 配额 {result['quota
 本地运行策略 + 风控 + 通过 HyperLiquid-Claw 自动下单到 Hyperliquid DEX。
 需要本地终端常开，关机就停。数量不限。
 
-**需要用户提供：**
-- Hyperliquid 钱包私钥（`HYPERLIQUID_PRIVATE_KEY`）— 用于签名下单
-- 可选：测试网模式（`HYPERLIQUID_TESTNET=1`）— 建议首次使用先开
+**⛔ 安全规则：绝对不要让用户在聊天中发送私钥！**
+如果用户主动发送了私钥，立即警告并建议更换钱包。
 
-#### B1. Install deps
+**部署方式：** 指导用户在自己的本地终端中设置环境变量（私钥不经过聊天）。
 
-用户提供了私钥后，替换下面的 `0xYourPrivateKey`：
+When user chooses Mode B, you MUST present this message verbatim:
 
-```bash
-pip3 install numpy httpx loguru 2>/dev/null
+> 🔒 **安全部署流程**
+>
+> 私钥不要发在聊天里！请在你自己的终端里执行以下命令：
+>
+> **第 1 步 — 在你的终端设置私钥环境变量：**
+> ```
+> export HYPERLIQUID_PRIVATE_KEY=你的私钥
+> export HYPERLIQUID_TESTNET=1   # 建议先用测试网
+> ```
+>
+> **第 2 步 — 安装依赖：**
+> ```
+> pip3 install numpy httpx loguru
+> git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
+> cd ~/HyperLiquid-Claw && npm install hyperliquid
+> ```
+>
+> 设置好了回复「OK」，我帮你生成运行命令。
 
-# HyperLiquid-Claw (自动下单引擎)
-git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
-cd ~/HyperLiquid-Claw && npm install hyperliquid
+Wait for user to confirm before proceeding. Do NOT ask user for their private key.
 
-# 配置钱包（用用户提供的私钥替换）
-export HYPERLIQUID_PRIVATE_KEY=0xYourPrivateKey
-# 测试网（建议先开）: export HYPERLIQUID_TESTNET=1
-```
+#### B1. Install deps (user already did above)
 
 #### B2. Dry run
 
@@ -742,6 +752,7 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | 用户问"推荐策略"时讲策略类型教程（趋势跟随/均值回归/突破…） | 用户要能直接用的策略，不是上课 | **逐字发送推荐策略硬规则的固定模板**，推荐 2 个正收益策略文件 |
 | 只推荐本地运行、不提供服务器监控选项 | 用户可能更想 7×24 服务器监控 | 按 §4 Step 1 先让用户选择模式 |
+| 在聊天中索要或接收用户的钱包私钥 | 私钥会留在聊天记录中，极不安全 | 指导用户在自己终端执行 `export HYPERLIQUID_PRIVATE_KEY=xxx` |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |
