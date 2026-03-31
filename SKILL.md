@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.32.0
+version: 3.33.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -82,7 +82,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | 优化算法选择 (1-6) | "4" / "random" / "随机" | 执行 §3 用 random 算法优化 |
 | 优化算法选择 (1-6) | "5" / "annealing" / "退火" | 执行 §3 用 annealing 算法优化 |
 | 优化算法选择 (1-6) | "6" / "pso" / "粒子" | 执行 §3 用 pso 算法优化 |
-| 监控/部署请求 | 任何 | 执行 §4 选择模式（服务器监控 or 本地运行） |
+| 监控/部署请求 | 任何 | 执行 §4 服务器监控模式 |
 | 回测报告下一步 (1-6) | "1" / "genetic" | 执行 §3 用 genetic 算法优化 |
 | 回测报告下一步 | "回测" / "再测一次" | 执行 §2 重新回测 |
 | 回测报告下一步 | "部署" / "监控" / "跑起来" | 执行 §4 监控 |
@@ -549,30 +549,22 @@ openclaw message send --path "<result._optimization_chart_path的值>" --caption
 
 If the strategy hasn't been backtested, warn: "这个策略还没有回测过，建议先回测。" If user insists, proceed.
 
-### Step 1: 选择模式
+### Step 1: 直接启动服务器监控
+
+Bot 环境没有本地终端，所有监控一律使用服务器模式。不要给用户选择本地模式。
 
 When user triggers Monitor workflow, you MUST present this message verbatim:
 
-> 📡 策略部署 — 请选择运行模式：
+> 📡 **策略监控部署**
 >
-> 1️⃣ **服务器监控**（推荐）
-> · 服务器定时执行策略，产生信号后推送给你
-> · 免费 3 个策略同时运行，7×24 无需本地开机
+> 服务器将 7×24 定时执行你的策略，产生买卖信号后推送给你。
+> · 免费同时监控 3 个策略
 > · 信号自动存入数据库，支持历史回查
+> · 无需本地开机
 >
-> 2️⃣ **本地运行 + 自动下单**
-> · 在你本地终端定时执行策略
-> · 风控检查后自动下单到 Hyperliquid DEX
-> · 需要本地终端常开，关机就停
-> · 需要 Node.js >= 18 + Hyperliquid 钱包私钥
->
-> 回复 1 或 2 选择模式。
+> 确认要部署吗？回复「确认」开始。
 
-Wait for user to choose before proceeding.
-
-### Mode A: 服务器监控（用户选了 1）
-
-服务器定时执行策略脚本，产生信号后存库。免费 3 个配额。
+Wait for user to confirm, then execute:
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -599,75 +591,22 @@ print(f"✅ 监控已启动 | Job ID: {result['job_id']} | 配额 {result['quota
 
 ---
 
-### Mode B: 本地运行 + 自动下单（用户选了 2）
+### 私钥安全规则
 
-本地运行策略 + 风控 + 通过 HyperLiquid-Claw 自动下单到 Hyperliquid DEX。
-需要本地终端常开，关机就停。数量不限。
+**⛔ 绝对不要让用户在聊天中发送私钥！**
+如果用户主动发送了私钥，你必须立即回复：
 
-**⛔ 安全规则：绝对不要让用户在聊天中发送私钥！**
-如果用户主动发送了私钥，立即警告并建议更换钱包。
-
-**部署方式：** 指导用户在自己的本地终端中设置环境变量（私钥不经过聊天）。
-
-When user chooses Mode B, you MUST present this message verbatim:
-
-> 🔒 **安全部署流程**
+> ⚠️ **安全警告**
 >
-> 私钥不要发在聊天里！请在你自己的终端里执行以下命令：
+> 请不要在聊天中发送私钥！私钥会留在聊天记录中，非常不安全。
+> 如果这个私钥控制了真实资金，建议立即转移资产并更换钱包。
 >
-> **第 1 步 — 在你的终端设置私钥环境变量：**
-> ```
-> export HYPERLIQUID_PRIVATE_KEY=你的私钥
-> export HYPERLIQUID_TESTNET=1   # 建议先用测试网
-> ```
->
-> **第 2 步 — 安装依赖：**
-> ```
-> pip3 install numpy httpx loguru
-> git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
-> cd ~/HyperLiquid-Claw && npm install hyperliquid
-> ```
->
-> 设置好了回复「OK」，我帮你生成运行命令。
-
-Wait for user to confirm before proceeding. Do NOT ask user for their private key.
-
-#### B1. Install deps (user already did above)
-
-#### B2. Dry run
-
-```bash
-cd {baseDir}
-python3 scripts/signal_runtime.py \
-  --strategy strategies/xxx_strategy.py \
-  --interval 14400 --dry-run
-```
-
-#### B3. Live execution
-
-```bash
-python3 scripts/signal_runtime.py \
-  --strategy strategies/xxx_strategy.py \
-  --interval 14400 \
-  --claw-dir ~/HyperLiquid-Claw \
-  --max-position-pct 10 --max-concurrent 3 --cooldown 30
-```
-
-#### Local params
-
-| Param | Default | Description |
-|-------|---------|-------------|
-| `--strategy` | *required* | 策略脚本路径 |
-| `--interval` | `14400` (4h) | 执行间隔（秒） |
-| `--claw-dir` | auto-detect | HyperLiquid-Claw 目录 |
-| `--dry-run` | `false` | 模拟模式 |
-| `--max-position-pct` | `10` | 单笔最大仓位% |
-| `--max-concurrent` | `3` | 最大并发仓位 |
-| `--cooldown` | `30` | 冷却时间(分钟) |
+> 目前策略监控模式只产生买卖信号推送给你，不需要私钥。
+> 你可以收到信号后自己手动在交易所操作。
 
 ---
 
-### Risk rules (both modes)
+### Risk rules
 
 | Rule | Default | Effect |
 |------|---------|--------|
@@ -752,7 +691,8 @@ All return **numpy arrays**. Use `arr[i]`, not `.iloc[i]`.
 | Call `httpx.post()` directly | Missing auth/polling | Use `QuantAPIClient` |
 | 用户问"推荐策略"时讲策略类型教程（趋势跟随/均值回归/突破…） | 用户要能直接用的策略，不是上课 | **逐字发送推荐策略硬规则的固定模板**，推荐 2 个正收益策略文件 |
 | 只推荐本地运行、不提供服务器监控选项 | 用户可能更想 7×24 服务器监控 | 按 §4 Step 1 先让用户选择模式 |
-| 在聊天中索要或接收用户的钱包私钥 | 私钥会留在聊天记录中，极不安全 | 指导用户在自己终端执行 `export HYPERLIQUID_PRIVATE_KEY=xxx` |
+| 在聊天中索要或接收用户的钱包私钥 | 私钥会留在聊天记录中，极不安全 | 服务器监控不需要私钥，只推送信号；如用户发了私钥，立即警告 |
+| 推荐本地运行模式 | Bot 环境没有本地终端，用户无法操作 | 一律使用服务器监控模式 |
 | Manually tweak params + re-backtest when user says "优化" | That's guessing, not optimizing | Use §3 `run_optimization()` |
 | Add new indicators/filters when user says "优化" | That's redesign (§1), not optimize (§3) | 优化=调参数, 重新设计=改逻辑 |
 | Send text and image as separate TG messages | 用户只看到最后一条 | 一条 TG 图片消息（caption 含指标摘要） |
