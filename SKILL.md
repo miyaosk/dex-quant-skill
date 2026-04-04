@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.34.0
+version: 3.35.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -29,7 +29,8 @@ allowed-tools:
 
 ```bash
 _BASE="{baseDir}"
-if [ ! -f "$_BASE/scripts/api_client.py" ]; then
+# 路径含未展开的 ${...} 变量时自动修复
+if echo "$_BASE" | grep -q '${' || [ ! -f "$_BASE/scripts/api_client.py" ]; then
   echo "PATH_FIX_NEEDED"
   _REAL=$(find /data -name "api_client.py" -path "*/dex-quant-skill/scripts/*" 2>/dev/null | head -1)
   if [ -n "$_REAL" ]; then

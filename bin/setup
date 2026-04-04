@@ -4,19 +4,47 @@ set -euo pipefail
 echo "🔧 dex-quant-skill setup"
 
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-STRATS_DIR="$SKILL_DIR/strategies"
 
+# 检测路径中是否有未展开的 shell 变量（如 ${OPENCLAWWORKSPACEDIR}）
+if echo "$SKILL_DIR" | grep -q '${'; then
+  echo "⚠️  检测到路径含未展开的变量: $SKILL_DIR"
+  echo "   尝试修复..."
+
+  # 找到实际 workspace 目录
+  REAL_WORKSPACE=""
+  if [ -d "/data/.openclaw/workspace" ]; then
+    REAL_WORKSPACE=$(find /data/.openclaw/workspace -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -1)
+  fi
+
+  if [ -n "$REAL_WORKSPACE" ] && [ -d "$REAL_WORKSPACE/skills" ]; then
+    CORRECT_DIR="$REAL_WORKSPACE/skills/dex-quant-skill"
+    if [ "$SKILL_DIR" != "$CORRECT_DIR" ] && [ -d "$SKILL_DIR" ]; then
+      mkdir -p "$REAL_WORKSPACE/skills"
+      if [ -d "$CORRECT_DIR" ]; then
+        rm -rf "$CORRECT_DIR"
+      fi
+      cp -r "$SKILL_DIR" "$CORRECT_DIR"
+      echo "✅ 已复制到正确路径: $CORRECT_DIR"
+      SKILL_DIR="$CORRECT_DIR"
+    fi
+  fi
+fi
+
+STRATS_DIR="$SKILL_DIR/strategies"
 mkdir -p "$STRATS_DIR"
 
 if python3 -c "import httpx, loguru" 2>/dev/null; then
   echo "✅ Dependencies OK (httpx, loguru)"
 else
   echo "📦 Installing dependencies..."
-  pip3 install httpx loguru 2>/dev/null \
-    || pip install httpx loguru 2>/dev/null \
-    || python3 -m pip install httpx loguru 2>/dev/null \
-    || { echo "⚠️  Auto-install failed. Run: pip install httpx loguru"; exit 1; }
+  pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+    || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
+    || pip3 install httpx loguru matplotlib 2>/dev/null \
+    || pip install httpx loguru matplotlib 2>/dev/null \
+    || python3 -m pip install httpx loguru matplotlib 2>/dev/null \
+    || { echo "⚠️  Auto-install failed. Run: pip install httpx loguru matplotlib"; }
   echo "✅ Dependencies installed"
 fi
 
+echo "✅ Ready — skill dir: $SKILL_DIR"
 echo "✅ Ready — strategies dir: $STRATS_DIR"
