@@ -9,8 +9,8 @@ Skill 端调用流程:
   5. 返回绩效结果，展示给用户
 
 认证:
-  - 首次使用自动注册机器码，获取 Token（同时最多 3 个策略监控）
-  - Token 缓存在 ~/.dex-quant/config.json
+  - 首次使用自动生成随机设备ID并注册，获取 Token（同时最多 3 个策略监控）
+  - Token 缓存在 skill 目录下的 .auth.json
   - 所有请求自动携带 X-Token 头
 
 用法:

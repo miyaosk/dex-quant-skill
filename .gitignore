@@ -7,3 +7,5 @@ build/
 .history/
 skills/
 .clawhub/
+.auth.json
+.DS_Store
