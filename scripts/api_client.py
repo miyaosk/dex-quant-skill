@@ -772,7 +772,8 @@ class QuantAPIClient:
         ax_hdr.set_ylim(0, 3)
         ax_hdr.axis("off")
 
-        ax_hdr.text(5, 2.4, f"{strategy_name} — Optimization", fontsize=14,
+        safe_name_title = QuantAPIClient._safe_title(strategy_name or "Strategy")
+        ax_hdr.text(5, 2.4, f"{safe_name_title} — Optimization", fontsize=14,
                     color=WHITE, ha="center", va="center", fontweight="bold")
         ax_hdr.text(5, 1.5, f"Algorithm: {method_label}  |  Evaluated: {success}/{total}  |  Failed: {failed}  |  Time: {elapsed:.0f}s",
                     fontsize=9, color=GRAY, ha="center", va="center")
@@ -1013,6 +1014,8 @@ class QuantAPIClient:
 
     _font_configured = False
 
+    _has_cjk_font = False
+
     @staticmethod
     def _setup_chinese_font() -> None:
         """配置 matplotlib 中文字体（只执行一次）。"""
@@ -1027,46 +1030,49 @@ class QuantAPIClient:
             "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC",
             "WenQuanYi Micro Hei", "WenQuanYi Zen Hei",
             "SimHei", "Microsoft YaHei", "PingFang SC", "Heiti SC",
-            "Arial Unicode MS", "DejaVu Sans",
+            "Arial Unicode MS",
         ]
         available = {f.name for f in fm.fontManager.ttflist}
         for name in candidates:
             if name in available:
                 matplotlib.rcParams["font.sans-serif"] = [name, "DejaVu Sans"]
                 matplotlib.rcParams["axes.unicode_minus"] = False
+                QuantAPIClient._has_cjk_font = True
                 return
+
+        import subprocess
+        try:
+            subprocess.run(
+                ["apt-get", "install", "-y", "--no-install-recommends", "fonts-noto-cjk"],
+                capture_output=True, timeout=30,
+            )
+            fm._load_fontmanager(try_read_cache=False)
+            for name in candidates:
+                if name in {f.name for f in fm.fontManager.ttflist}:
+                    matplotlib.rcParams["font.sans-serif"] = [name, "DejaVu Sans"]
+                    matplotlib.rcParams["axes.unicode_minus"] = False
+                    QuantAPIClient._has_cjk_font = True
+                    return
+        except Exception:
+            pass
 
         font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fonts")
         font_file = os.path.join(font_dir, "NotoSansSC-Regular.ttf")
-
-        if not os.path.exists(font_file):
-            print("  ⏳ 下载中文字体 ...", flush=True)
-            try:
-                Path(font_dir).mkdir(parents=True, exist_ok=True)
-                import subprocess, sys
-                url = "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
-                subprocess.check_call(
-                    ["curl", "-sL", "-o", font_file, url],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    timeout=30,
-                )
-            except Exception:
-                try:
-                    url2 = "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
-                    subprocess.check_call(
-                        ["curl", "-sL", "-o", font_file, url2],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                        timeout=30,
-                    )
-                except Exception:
-                    print("  ⚠ 中文字体下载失败，图表中文可能显示为方框")
-                    return
-
         if os.path.exists(font_file):
             fm.fontManager.addfont(font_file)
             prop = fm.FontProperties(fname=font_file)
             matplotlib.rcParams["font.sans-serif"] = [prop.get_name(), "DejaVu Sans"]
             matplotlib.rcParams["axes.unicode_minus"] = False
+            QuantAPIClient._has_cjk_font = True
+
+    @staticmethod
+    def _safe_title(text: str) -> str:
+        """中文字体不可用时，把中文替换掉避免方框。"""
+        if QuantAPIClient._has_cjk_font:
+            return text
+        import re
+        cleaned = re.sub(r'[\u4e00-\u9fff]+', '', text).strip()
+        return cleaned if cleaned else "Strategy Report"
 
     @staticmethod
     def _print_equity_chart(
@@ -1159,7 +1165,7 @@ class QuantAPIClient:
                       hspace=0.15,
                       left=0.10, right=0.94, top=0.96, bottom=0.06)
 
-        title = strategy_name or "Backtest Report"
+        title = QuantAPIClient._safe_title(strategy_name or "Backtest Report")
         sign = "+" if ret_pct >= 0 else ""
 
         # ════════ 顶部: 策略名 + KPI 卡片 ════════
