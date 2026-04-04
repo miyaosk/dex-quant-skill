@@ -1,78 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "🔧 dex-quant-skill setup"
-
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-
-# ── 修复 clawhub 路径问题 ──
-# clawhub (Node.js) 不展开 ${OPENCLAWWORKSPACEDIR} 等 shell 变量，
-# 导致 skill 安装到字面量路径。这里自动修复。
-if echo "$SKILL_DIR" | grep -q '${'; then
-  echo "⚠️  路径含未展开变量，自动修复中..."
-
-  FIXED=0
-
-  # 策略1: 找 /data/.openclaw/workspace/ 下的真实目录
-  if [ -d "/data/.openclaw/workspace" ]; then
-    for REAL_WS in /data/.openclaw/workspace/*/; do
-      # 跳过也是 ${...} 的目录
-      echo "$REAL_WS" | grep -q '${' && continue
-      [ -d "$REAL_WS" ] || continue
-
-      TARGET="$REAL_WS/skills/dex-quant-skill" # 去掉末尾 /
-      TARGET="${TARGET%/}"
-      # 不是当前目录才需要修
-      [ "$SKILL_DIR" = "$TARGET" ] && continue
-
-      mkdir -p "$(dirname "$TARGET")"
-      rm -rf "$TARGET" 2>/dev/null || true
-      ln -sf "$SKILL_DIR" "$TARGET"
-      echo "✅ 已链接: $TARGET → $SKILL_DIR"
-      FIXED=1
-      break
-    done
-  fi
-
-  # 策略2: 找 /data/workspace/skills (某些环境的替代路径)
-  if [ "$FIXED" = "0" ] && [ -d "/data/workspace" ]; then
-    TARGET="/data/workspace/skills/dex-quant-skill"
-    mkdir -p "/data/workspace/skills"
-    rm -rf "$TARGET" 2>/dev/null || true
-    ln -sf "$SKILL_DIR" "$TARGET"
-    echo "✅ 已链接: $TARGET → $SKILL_DIR"
-    FIXED=1
-  fi
-
-  # 策略3: 找 /data 下任何已有的 skills 目录
-  if [ "$FIXED" = "0" ]; then
-    EXISTING=$(find /data -maxdepth 4 -type d -name "skills" 2>/dev/null | grep -v '${' | head -1)
-    if [ -n "$EXISTING" ]; then
-      TARGET="$EXISTING/dex-quant-skill"
-      rm -rf "$TARGET" 2>/dev/null || true
-      ln -sf "$SKILL_DIR" "$TARGET"
-      echo "✅ 已链接: $TARGET → $SKILL_DIR"
-      FIXED=1
-    fi
-  fi
-
-  [ "$FIXED" = "0" ] && echo "⚠️  未找到正确的 skills 目录，但 Preamble 会在运行时自动定位"
-fi
-
-# ── 创建目录 ──
 mkdir -p "$SKILL_DIR/strategies" "$SKILL_DIR/output"
 
-# ── 安装依赖 ──
-if python3 -c "import httpx, loguru, matplotlib" 2>/dev/null; then
-  echo "✅ Dependencies OK"
-else
+python3 -c "import httpx, loguru, matplotlib" 2>/dev/null && echo "✅ Dependencies OK" || {
   echo "📦 Installing dependencies..."
   pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null \
     || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
     || pip3 install httpx loguru matplotlib 2>/dev/null \
-    || pip install httpx loguru matplotlib 2>/dev/null \
-    || python3 -m pip install httpx loguru matplotlib 2>/dev/null \
-    || echo "⚠️  Auto-install failed — Preamble will retry"
-fi
+    || echo "⚠️  Auto-install failed — run: pip install httpx loguru matplotlib"
+}
 
 echo "✅ dex-quant-skill ready"

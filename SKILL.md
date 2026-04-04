@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.38.0
+version: 3.39.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -27,37 +27,26 @@ allowed-tools:
 
 ## Preamble (run first)
 
-```bash
-_BASE="{baseDir}"
+```python
+import subprocess, os, sys
 
-# 自动修复路径 — clawhub install 可能把 ${OPENCLAWWORKSPACEDIR} 当字面量
-# 检测: 路径含 ${ 或 api_client.py 不存在
-if echo "$_BASE" | grep -q '${' || [ ! -f "$_BASE/scripts/api_client.py" ]; then
-  echo "PATH_FIX: searching..."
-  _REAL=$(find /data -name "api_client.py" -path "*/dex-quant-skill/scripts/*" 2>/dev/null | head -1)
-  if [ -n "$_REAL" ]; then
-    _BASE=$(dirname $(dirname "$_REAL"))
-    echo "PATH_FIXED=$_BASE"
-  fi
-fi
+BASE = '{baseDir}'
+os.makedirs(os.path.join(BASE, 'strategies'), exist_ok=True)
+os.makedirs(os.path.join(BASE, 'output'), exist_ok=True)
 
-mkdir -p "$_BASE/strategies" "$_BASE/output"
-echo "BASE=$_BASE"
-python3 -c "import httpx, loguru, matplotlib" 2>/dev/null && echo "DEPS_OK" || echo "NEEDS_DEPS"
+try:
+    import httpx, loguru, matplotlib
+    print("DEPS_OK")
+except ImportError:
+    print("INSTALLING_DEPS...")
+    subprocess.run([sys.executable, '-m', 'pip', 'install', '--break-system-packages',
+                    'httpx', 'loguru', 'matplotlib'], capture_output=True)
+    print("DEPS_INSTALLED")
+
+print(f"BASE={BASE}")
 ```
 
-**⚠️ 如果输出 `PATH_FIXED=...`，必须用该值替换后续所有 `{baseDir}`。** 这是正常行为（clawhub 安装路径问题），不影响使用。
-
-If `NEEDS_DEPS`（OpenClaw 环境需要 `--break-system-packages`）:
-
-```bash
-pip3 install --break-system-packages httpx loguru matplotlib 2>/dev/null \
-  || pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
-  || python3 -m pip install --break-system-packages httpx loguru matplotlib 2>/dev/null \
-  || (python3 -m ensurepip --upgrade 2>/dev/null && python3 -m pip install --break-system-packages httpx loguru matplotlib)
-```
-
-All three required. If all fail → tell user to install manually and **STOP**.
+If deps install fails → tell user to install manually and **STOP**.
 
 ## Workflow routing
 
