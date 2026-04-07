@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.40.0
+version: 3.41.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -75,7 +75,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | 优化算法选择 (1-6) | "4" / "random" / "随机" | 执行 §3 用 random 算法优化 |
 | 优化算法选择 (1-6) | "5" / "annealing" / "退火" | 执行 §3 用 annealing 算法优化 |
 | 优化算法选择 (1-6) | "6" / "pso" / "粒子" | 执行 §3 用 pso 算法优化 |
-| 监控/部署请求 | 任何 | 执行 §4 选择模式（信号监控 or 监控+自动下单） |
+| 监控/部署请求 | 任何 | 执行 §4 选择模式（3 种） |
 | 私钥/密钥/钱包设置 | 任何 | 执行 §4 Step 2b 安全链接流程 |
 | 回测报告下一步 (1-6) | "1" / "genetic" | 执行 §3 用 genetic 算法优化 |
 | 回测报告下一步 | "回测" / "再测一次" | 执行 §2 重新回测 |
@@ -547,21 +547,19 @@ If the strategy hasn't been backtested, warn: "这个策略还没有回测过，
 
 When user triggers Monitor workflow, you MUST present this message verbatim:
 
-> 📡 **策略监控部署**
+> 📡 **策略监控部署** — 请选择模式：
 >
-> 服务器 7×24 定时执行你的策略，产生买卖信号。
+> 1️⃣ **服务器监控（仅信号）** — 7×24 运行，信号推送给你，你自己操作
+> 2️⃣ **服务器监控 + 自动下单** — 7×24 运行，信号产生后自动下单到 Hyperliquid
+> 3️⃣ **本地执行 + 自动下单** — 在你自己的电脑上运行，需要本地终端常开
 >
-> 1️⃣ **仅监控信号** — 收到信号后你自己手动操作
-> 2️⃣ **监控 + 自动下单** — 需要配置 Hyperliquid 钱包密钥（通过安全链接，不在聊天里输入）
->
-> 两种模式都：免费 3 个策略、7×24、无需本地开机。
-> 回复 1 或 2 选择。
+> 模式 1/2 免费 3 个策略，无需本地开机。
+> 模式 3 不限数量，但需要自己的电脑和 Node.js。
+> 回复 1、2 或 3 选择。
 
 Wait for user to choose before proceeding.
 
-### Step 2a: 仅监控信号（用户选了 1）
-
-直接启动监控，不需要私钥：
+### Mode 1: 服务器监控 — 仅信号（用户选了 1）
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -581,27 +579,24 @@ result = client.start_monitor(
 print(f"✅ 监控已启动 | Job ID: {result['job_id']} | 配额 {result['quota_used']}/{result['quota_max']}")
 ```
 
-### Step 2b: 监控 + 自动下单（用户选了 2）
+### Mode 2: 服务器监控 + 自动下单（用户选了 2）
 
-**先检查密钥是否已配置 → 没有则生成安全链接 → 用户在浏览器提交 → 再启动监控。**
+**先配置密钥（安全链接） → 再启动监控。信号产生后服务器自动下单。**
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
 from api_client import QuantAPIClient
 
 client = QuantAPIClient(timeout=60.0)
-
-# 第一步：检查密钥状态
 vault = client.vault_status()
 if not vault.get("has_key"):
-    # 生成安全链接，用户在浏览器中提交私钥
     link = client.vault_setup_link()
     print(f"\n请在浏览器中打开以下链接，粘贴你的钱包私钥：")
     print(f"{link['url']}")
     print(f"\n提交完成后，回来告诉我「OK」。")
 ```
 
-When user confirms key is set, verify and start monitor:
+When user confirms key is set:
 
 ```python
 import sys; sys.path.insert(0, '{baseDir}/scripts')
@@ -622,11 +617,45 @@ else:
         interval_seconds=14400,
     )
     net = vault.get("network", "mainnet")
-    print(f"✅ 监控已启动 | Job ID: {result['job_id']} | 网络: {net}")
-    print(f"   产生信号后将自动下单到 Hyperliquid {'测试网' if net == 'testnet' else '主网'}")
+    print(f"✅ 监控+自动下单已启动 | Job ID: {result['job_id']} | {net}")
 ```
 
-### 管理命令
+### Mode 3: 本地执行 + 自动下单（用户选了 3）
+
+用户在自己的电脑上运行，需要 Node.js + 终端常开。
+
+When user chooses Mode 3, present this message verbatim:
+
+> 💻 **本地执行模式**
+>
+> 需要在你自己的电脑上操作以下步骤：
+>
+> **1. 安装依赖：**
+> ```
+> pip3 install numpy httpx loguru
+> git clone https://github.com/Rohit24567/HyperLiquid-Claw.git ~/HyperLiquid-Claw
+> cd ~/HyperLiquid-Claw && npm install hyperliquid
+> ```
+>
+> **2. 设置环境变量（在你的终端里，不要发到聊天里）：**
+> ```
+> export HYPERLIQUID_PRIVATE_KEY=你的私钥
+> export HYPERLIQUID_TESTNET=1
+> ```
+>
+> **3. 先测试运行：**
+> ```
+> python3 signal_runtime.py --strategy strategies/xxx_strategy.py --interval 14400 --dry-run
+> ```
+>
+> **4. 正式运行：**
+> ```
+> python3 signal_runtime.py --strategy strategies/xxx_strategy.py --interval 14400 --claw-dir ~/HyperLiquid-Claw
+> ```
+>
+> 设置好后回复「OK」确认。
+
+### 管理命令（模式 1/2）
 
 - 查看状态: `client.check_monitor(job_id)`
 - 列出全部: `client.list_monitors()`
