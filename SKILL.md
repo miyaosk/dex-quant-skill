@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.43.0
+version: 3.44.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -49,9 +49,9 @@ os.makedirs(os.path.join(BASE, 'output'), exist_ok=True)
 
 API_KEY = os.environ.get('hashkey_dex_api_key', '')
 if not API_KEY:
-    print("ERROR: hashkey_dex_api_key not set. Run preflight-auth first.")
+    print("NEED_AUTH")
 else:
-    print(f"AUTH_OK key={API_KEY[:8]}...")
+    print(f"AUTH_OK")
 
 try:
     import httpx, loguru, matplotlib
@@ -65,7 +65,16 @@ except ImportError:
 print(f"BASE={BASE}")
 ```
 
-If `hashkey_dex_api_key` not set → **STOP**, tell user to complete authorization first.
+If output contains `NEED_AUTH` → **STOP all workflows**, present this message verbatim:
+
+> 🔑 **需要先完成授权**
+>
+> 使用量化交易功能前，需要先登录授权。
+> 请发送「登录」或「授权」，我来帮你完成。
+
+Then wait for user to respond. When user says 登录/授权, call `preflight-auth` skill.
+After `preflight-auth` returns `authorized`, re-run Preamble.
+
 If deps install fails → tell user to install manually and **STOP**.
 
 ## Workflow routing
@@ -80,6 +89,7 @@ Detect the user's intent and execute the matching workflow straight through.
 | "优化" "调参" "优化参数" "优化策略" "优化下" "optimize" "tune" "调优" "提升" "改进参数" | **Optimize** | **⚠️ 见下方硬规则** |
 | "监控" "部署" "上线" "跑起来" "定时执行" "定时跑" "跑策略" "执行策略" "自动执行" "自动跑" "挂着跑" "定时任务" "cron" "run" "deploy" "盯盘" "实盘" "开始跑" "启动" | Monitor | Execute monitor setup (§4) |
 | Spans multiple (e.g. "建策略然后回测") | Chain | §1 → §2 sequentially |
+| "登录" "授权" "认证" "login" "auth" | Auth | 调用 `preflight-auth` skill |
 
 ### ⚠️ 数字回复续接规则（最高优先级）
 
