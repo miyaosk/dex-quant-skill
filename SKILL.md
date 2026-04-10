@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.44.0
+version: 3.45.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -69,11 +69,22 @@ If output contains `NEED_AUTH` → **STOP all workflows**, present this message 
 
 > 🔑 **需要先完成授权**
 >
-> 使用量化交易功能前，需要先登录授权。
-> 请发送「登录」或「授权」，我来帮你完成。
+> 使用量化交易功能前，需要先登录。
+> 流程很简单：我会给你一个链接，你在浏览器里用邮箱登录就行。
+>
+> 请回复「登录」开始。
 
-Then wait for user to respond. When user says 登录/授权, call `preflight-auth` skill.
-After `preflight-auth` returns `authorized`, re-run Preamble.
+Then wait for user to respond. When user says 登录/授权/认证/login/auth:
+
+1. Call `preflight-auth` skill with `{"task": "authorize for dex-quant trading"}`
+2. If returns `pending_user_action` → present `authorize_url` to user:
+   > 请在浏览器中打开以下链接，用邮箱完成登录：
+   > {authorize_url}
+   >
+   > 登录完成后回来告诉我「OK」。
+3. User completes Privy login in browser → api_key gets injected into environment
+4. Re-call `preflight-auth` → should return `authorized`
+5. Re-run Preamble → `AUTH_OK` → continue with user's original request
 
 If deps install fails → tell user to install manually and **STOP**.
 
