@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.45.0
+version: 3.46.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -25,20 +25,7 @@ allowed-tools:
   - Write
 ---
 
-## 前置授权
-
-前置依赖：`skills/preflight-auth/`
-
-本 skill 依赖其中的 `preflight-auth` 进行授权预检查。执行本 skill 前，agent 必须先调用该 skill：
-- 若返回 `authorized`，才可继续当前业务流程
-- 若返回 `pending_user_action`，必须暂停当前流程并引导用户完成 Privy 授权
-- 若返回 `failed`，必须终止执行并返回错误
-
-本 skill 不负责自行处理登录流程，也不应绕过 `preflight-auth` 伪造授权状态。
-
-**授权通过后**，环境变量 `hashkey_dex_api_key` 将可用，后续所有 API 调用使用该 key 认证。
-
-## Preamble (run first, after preflight-auth returns `authorized`)
+## Preamble (run first)
 
 ```python
 import subprocess, os, sys
@@ -46,12 +33,6 @@ import subprocess, os, sys
 BASE = '{baseDir}'
 os.makedirs(os.path.join(BASE, 'strategies'), exist_ok=True)
 os.makedirs(os.path.join(BASE, 'output'), exist_ok=True)
-
-API_KEY = os.environ.get('hashkey_dex_api_key', '')
-if not API_KEY:
-    print("NEED_AUTH")
-else:
-    print(f"AUTH_OK")
 
 try:
     import httpx, loguru, matplotlib
@@ -64,27 +45,6 @@ except ImportError:
 
 print(f"BASE={BASE}")
 ```
-
-If output contains `NEED_AUTH` → **STOP all workflows**, present this message verbatim:
-
-> 🔑 **需要先完成授权**
->
-> 使用量化交易功能前，需要先登录。
-> 流程很简单：我会给你一个链接，你在浏览器里用邮箱登录就行。
->
-> 请回复「登录」开始。
-
-Then wait for user to respond. When user says 登录/授权/认证/login/auth:
-
-1. Call `preflight-auth` skill with `{"task": "authorize for dex-quant trading"}`
-2. If returns `pending_user_action` → present `authorize_url` to user:
-   > 请在浏览器中打开以下链接，用邮箱完成登录：
-   > {authorize_url}
-   >
-   > 登录完成后回来告诉我「OK」。
-3. User completes Privy login in browser → api_key gets injected into environment
-4. Re-call `preflight-auth` → should return `authorized`
-5. Re-run Preamble → `AUTH_OK` → continue with user's original request
 
 If deps install fails → tell user to install manually and **STOP**.
 
@@ -100,7 +60,6 @@ Detect the user's intent and execute the matching workflow straight through.
 | "优化" "调参" "优化参数" "优化策略" "优化下" "optimize" "tune" "调优" "提升" "改进参数" | **Optimize** | **⚠️ 见下方硬规则** |
 | "监控" "部署" "上线" "跑起来" "定时执行" "定时跑" "跑策略" "执行策略" "自动执行" "自动跑" "挂着跑" "定时任务" "cron" "run" "deploy" "盯盘" "实盘" "开始跑" "启动" | Monitor | Execute monitor setup (§4) |
 | Spans multiple (e.g. "建策略然后回测") | Chain | §1 → §2 sequentially |
-| "登录" "授权" "认证" "login" "auth" | Auth | 调用 `preflight-auth` skill |
 
 ### ⚠️ 数字回复续接规则（最高优先级）
 
