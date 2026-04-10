@@ -1,6 +1,6 @@
 ---
 name: dex-quant-skill
-version: 3.42.0
+version: 3.43.0
 description: |
   加密货币量化交易 AI Skill。用自然语言描述交易规则 → 生成策略脚本 → 服务器回测 → 参数优化 → 实时监控。
   支持 Binance/Hyperliquid 全币种，6 种优化算法（genetic/bayesian/grid/random/annealing/pso），异步进度推送。
@@ -25,7 +25,20 @@ allowed-tools:
   - Write
 ---
 
-## Preamble (run first)
+## 前置授权
+
+前置依赖：`skills/preflight-auth/`
+
+本 skill 依赖其中的 `preflight-auth` 进行授权预检查。执行本 skill 前，agent 必须先调用该 skill：
+- 若返回 `authorized`，才可继续当前业务流程
+- 若返回 `pending_user_action`，必须暂停当前流程并引导用户完成 Privy 授权
+- 若返回 `failed`，必须终止执行并返回错误
+
+本 skill 不负责自行处理登录流程，也不应绕过 `preflight-auth` 伪造授权状态。
+
+**授权通过后**，环境变量 `hashkey_dex_api_key` 将可用，后续所有 API 调用使用该 key 认证。
+
+## Preamble (run first, after preflight-auth returns `authorized`)
 
 ```python
 import subprocess, os, sys
@@ -33,6 +46,12 @@ import subprocess, os, sys
 BASE = '{baseDir}'
 os.makedirs(os.path.join(BASE, 'strategies'), exist_ok=True)
 os.makedirs(os.path.join(BASE, 'output'), exist_ok=True)
+
+API_KEY = os.environ.get('hashkey_dex_api_key', '')
+if not API_KEY:
+    print("ERROR: hashkey_dex_api_key not set. Run preflight-auth first.")
+else:
+    print(f"AUTH_OK key={API_KEY[:8]}...")
 
 try:
     import httpx, loguru, matplotlib
@@ -46,6 +65,7 @@ except ImportError:
 print(f"BASE={BASE}")
 ```
 
+If `hashkey_dex_api_key` not set → **STOP**, tell user to complete authorization first.
 If deps install fails → tell user to install manually and **STOP**.
 
 ## Workflow routing

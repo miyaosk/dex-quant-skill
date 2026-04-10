@@ -36,22 +36,21 @@ from typing import Optional
 import httpx
 from loguru import logger
 
-from machine_auth import MachineAuth
-
 DEFAULT_SERVER_URL = "https://dex-quant-app-production.up.railway.app"
 API_PREFIX = "/api/v1"
 
 
 class QuantAPIClient:
-    """DEX Quant Server HTTP 客户端（自动认证）"""
+    """DEX Quant Server HTTP 客户端（使用 hashkey_dex_api_key 认证）"""
 
     def __init__(self, server_url: str = DEFAULT_SERVER_URL, timeout: float = 300.0):
         self.server_url = server_url
         self.base_url = server_url.rstrip("/") + API_PREFIX
         self._client = httpx.Client(timeout=timeout)
 
-        self._auth = MachineAuth(server_url)
-        self._token = self._auth.register_or_load()
+        self._token = os.environ.get("hashkey_dex_api_key", "")
+        if not self._token:
+            raise RuntimeError("hashkey_dex_api_key 环境变量未设置，请先完成 preflight-auth 授权")
 
     def _headers(self) -> dict:
         return {"X-Token": self._token}
