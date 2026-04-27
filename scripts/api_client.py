@@ -37,20 +37,19 @@ import httpx
 from loguru import logger
 
 from machine_auth import MachineAuth
-
-DEFAULT_SERVER_URL = "https://dex-quant-app-production.up.railway.app"
+from server_config import resolve_server_url
 API_PREFIX = "/api/v1"
 
 
 class QuantAPIClient:
     """DEX Quant Server HTTP 客户端（自动认证）"""
 
-    def __init__(self, server_url: str = DEFAULT_SERVER_URL, timeout: float = 300.0):
-        self.server_url = server_url
-        self.base_url = server_url.rstrip("/") + API_PREFIX
+    def __init__(self, server_url: str | None = None, timeout: float = 300.0):
+        self.server_url = resolve_server_url(server_url)
+        self.base_url = self.server_url.rstrip("/") + API_PREFIX
         self._client = httpx.Client(timeout=timeout)
 
-        self._auth = MachineAuth(server_url)
+        self._auth = MachineAuth(self.server_url)
         self._token = self._auth.register_or_load()
 
     def _headers(self) -> dict:

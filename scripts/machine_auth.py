@@ -23,6 +23,8 @@ from pathlib import Path
 import httpx
 from loguru import logger
 
+from server_config import resolve_server_url
+
 API_PREFIX = "/api/v1"
 
 _AUTH_FILE = Path(__file__).parent.parent / ".auth.json"
@@ -72,8 +74,8 @@ def _get_stable_device_id() -> str:
 class MachineAuth:
     """设备认证客户端"""
 
-    def __init__(self, server_url: str = "https://dex-quant-app-production.up.railway.app"):
-        self.server_url = server_url.rstrip("/")
+    def __init__(self, server_url: str | None = None):
+        self.server_url = resolve_server_url(server_url).rstrip("/")
         self.base_url = self.server_url + API_PREFIX
         self._client = httpx.Client(timeout=30.0)
         self._config: dict = {}

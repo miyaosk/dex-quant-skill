@@ -16,6 +16,7 @@ import os
 import sys
 
 from loguru import logger
+from server_config import resolve_server_url
 
 logger.remove()
 logger.add(sys.stderr, format="{time:HH:mm:ss} | {message}", level="INFO")
@@ -342,7 +343,7 @@ def run(
     symbol: str,
     timeframe: str,
     script_path: str = None,
-    server_url: str = "https://dex-quant-app-production.up.railway.app",
+    server_url: str | None = None,
 ):
     """
     策略脚本的统一入口。
@@ -362,7 +363,7 @@ def run(
                         help="运行模式: backtest / live")
     parser.add_argument("start_date", nargs="?", help="起始日期 YYYY-MM-DD")
     parser.add_argument("end_date", nargs="?", help="结束日期 YYYY-MM-DD")
-    parser.add_argument("--server", default=server_url, help="服务器地址")
+    parser.add_argument("--server", default=resolve_server_url(server_url), help="服务器地址")
 
     args = parser.parse_args()
 
