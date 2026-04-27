@@ -14,7 +14,7 @@ Skill 端调用流程:
   - 所有请求自动携带 X-Token 头
 
 用法:
-    client = QuantAPIClient("http://your-server:8000")
+    client = QuantAPIClient("https://quant.supersafeclaw.com")
     result = client.run_backtest(
         strategy_name="BTC MACD 策略",
         symbol="BTCUSDT",

@@ -1,0 +1,12 @@
+.git
+.idea
+.cursor
+.history
+.agent
+.factory
+.clawhub
+.DS_Store
+__pycache__/
+*.pyc
+output/
+docs/

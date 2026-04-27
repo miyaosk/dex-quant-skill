@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 
-DEFAULT_SERVER_URL = "https://dex-quant-app-production.up.railway.app"
+DEFAULT_SERVER_URL = "https://quant.supersafeclaw.com"
 
 
 def resolve_server_url(server_url: str | None = None) -> str:
